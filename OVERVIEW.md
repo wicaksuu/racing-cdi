@@ -1,268 +1,268 @@
-# 🏍️ Racing CDI - Product Overview
+# 🏍️ Racing CDI - Panduan Produk Lengkap
 
-## Honest Marketing Guide
+## Marketing yang Jujur & Realistis
 
-**Target Audience:** Racing enthusiasts, tuners, DIY builders, and professional mechanics who want programmable ignition without the commercial product price tag.
-
----
-
-## 🎯 What Is This?
-
-A **programmable CDI (Capacitor Discharge Ignition) replacement** for racing motorcycles, built on STM32H562 microcontroller, offering professional-grade timing precision and features at DIY prices.
-
-**In Simple Terms:**
-
-- Replaces your stock CDI unit
-- Fully programmable via text files on SD card
-- Professional timing accuracy (<0.01° jitter)
-- Advanced features like multi-map, quick shifter, rev limiter
-- Costs ~$15 in parts vs $200-5000 for commercial alternatives
+**Target Pengguna:** Penggemar balap motor, tuner, builder DIY, dan mekanik profesional yang ingin sistem pengapian programmable tanpa harus bayar mahal seperti produk komersial.
 
 ---
 
-## ✅ Key Features
+## 🎯 Apa Ini Sebenarnya?
 
-### **Ignition Control**
+Sebuah **pengganti CDI (Capacitor Discharge Ignition) yang bisa diprogram** untuk motor balap, dibangun dengan mikrokontroler STM32H562, menawarkan presisi timing level profesional dan fitur lengkap dengan harga DIY.
 
-- ✅ **6 Ignition Maps** - Switch on-the-fly with button
-- ✅ **81 Points per Map** - 250 RPM resolution (0-20,000 RPM)
-- ✅ **0.01° Resolution** - Precise timing adjustment
-- ✅ **-10° to +60° Range** - Full ATDC to BTDC control
-- ✅ **2-Stroke / 4-Stroke Mode** - Automatic cycle detection
-- ✅ **Cranking Mode** - Fixed timing below configurable RPM
+**Dalam Bahasa Sederhana:**
+
+- Ganti CDI standar motor lo
+- Bisa diprogram lewat file text di SD card
+- Akurasi timing profesional (<0.01° jitter)
+- Fitur canggih: multi-map, quick shifter, rev limiter
+- Biaya cuma ~200rb vs 3-70 juta produk komersial
+
+---
+
+## ✅ Fitur Utama
+
+### **Kontrol Pengapian**
+
+- ✅ **6 Ignition Map** - Ganti map on-the-fly dengan tombol
+- ✅ **81 Titik per Map** - Resolusi 250 RPM (0-20,000 RPM)
+- ✅ **Resolusi 0.01°** - Pengaturan timing yang presisi
+- ✅ **Range -10° sampai +60°** - Full control ATDC ke BTDC
+- ✅ **Mode 2-Tak / 4-Tak** - Deteksi siklus otomatis
+- ✅ **Cranking Mode** - Timing tetap di bawah RPM tertentu
 
 ### **Rev Limiter**
 
-- ✅ **4-Stage Progressive** - Soft → Medium → Hard → Full Cut
-- ✅ **Soft Limiter** - Timing retard only (no cut)
-- ✅ **Pattern-Based Cutting** - Predictable, not random (50%, 75%, 100%)
-- ✅ **Configurable Thresholds** - Independent settings per stage
+- ✅ **4 Tahap Progresif** - Soft → Medium → Hard → Full Cut
+- ✅ **Soft Limiter** - Retard timing aja (tanpa cut)
+- ✅ **Pattern-Based Cutting** - Pola yang predictable (50%, 75%, 100%)
+- ✅ **Threshold Bisa Diatur** - Setting independen per tahap
 
 ### **Quick Shifter**
 
-- ✅ **Strain Gauge Support** - Pressure sensor or load cell input
-- ✅ **RPM-Based Cut Time** - 21-point map (0-20k RPM)
-- ✅ **10-250ms Range** - Fully adjustable cut duration
-- ✅ **Smart Re-arm** - Prevents continuous cutting
-- ✅ **Web Calibration Tool** - Easy baseline/threshold setup
+- ✅ **Support Strain Gauge** - Input sensor tekanan atau load cell
+- ✅ **Cut Time Based RPM** - Map 21 titik (0-20k RPM)
+- ✅ **Range 10-250ms** - Durasi cut bisa diatur full
+- ✅ **Smart Re-arm** - Cegah cutting terus-menerus
+- ✅ **Web Calibration Tool** - Setup baseline/threshold mudah
 
-### **Advanced Timing**
+### **Timing Canggih**
 
-- ✅ **Phase Correction** - Self-adjusting based on actual crank position
-- ✅ **Predictive Timing (dRPM)** - Compensates for acceleration/deceleration
-- ✅ **Blind Window** - EMI rejection after ignition fire
-- ✅ **Cold Start Protection** - Waits for stable readings before firing
+- ✅ **Phase Correction** - Self-adjusting berdasarkan posisi kruk as sebenarnya
+- ✅ **Predictive Timing (dRPM)** - Kompensasi untuk akselerasi/deselerasi
+- ✅ **Blind Window** - Tolak noise EMI setelah pengapian
+- ✅ **Cold Start Protection** - Tunggu pembacaan stabil dulu sebelum nyalain
 
-### **Configuration & Logging**
+### **Konfigurasi & Logging**
 
-- ✅ **SD Card Storage** - All config files in human-readable text
-- ✅ **CSV Data Logging** - 1Hz recording when RPM > 1000
-- ✅ **Flash Backup** - Store default map in MCU memory
-- ✅ **Hot Reload** - Change settings without restart
-- ✅ **USB Serial Interface** - 115200 baud for configuration
+- ✅ **SD Card Storage** - Semua config file dalam text yang mudah dibaca
+- ✅ **CSV Data Logging** - Recording 1Hz waktu RPM > 1000
+- ✅ **Flash Backup** - Simpan map default di memori MCU
+- ✅ **Hot Reload** - Ubah setting tanpa restart
+- ✅ **USB Serial Interface** - 115200 baud untuk konfigurasi
 
-### **Web UI (Optional)**
+### **Web UI (Opsional)**
 
-- ✅ **Real-Time Dashboard** - 20Hz telemetry updates
-- ✅ **Visual Map Editor** - Drag-and-drop curve editing
-- ✅ **Oscilloscope View** - Waveform visualization
-- ✅ **File Manager** - Browse and download SD files
-- ✅ **No Installation** - Just Python + browser
+- ✅ **Real-Time Dashboard** - Update telemetry 20Hz
+- ✅ **Visual Map Editor** - Edit kurva dengan drag-and-drop
+- ✅ **Oscilloscope View** - Visualisasi waveform
+- ✅ **File Manager** - Browse dan download file SD
+- ✅ **Tanpa Instalasi** - Cuma perlu Python + browser
 
-### **Safety Features**
+### **Fitur Keamanan**
 
-- ✅ **Watchdog Timer** - Auto-recovery from MCU hang (4s timeout)
-- ✅ **Overheat Protection** - Progressive timing retard as temp rises
-- ✅ **Low Battery Warning** - Alert when voltage drops
-- ✅ **Over-Rev Warning** - Configurable RPM threshold
-- ✅ **Kill Switch** - Immediate engine cut
-- ✅ **Default Map Fallback** - Safe operation if config fails
+- ✅ **Watchdog Timer** - Auto-recovery kalau MCU hang (4s timeout)
+- ✅ **Overheat Protection** - Retard timing progresif saat suhu naik
+- ✅ **Low Battery Warning** - Alert kalau voltage drop
+- ✅ **Over-Rev Warning** - Threshold RPM bisa diatur
+- ✅ **Kill Switch** - Mati mesin langsung
+- ✅ **Default Map Fallback** - Operasi aman kalau config gagal
 
 ### **Monitoring**
 
-- ✅ **ADC Inputs** - Temperature, battery, charging voltage
-- ✅ **Shift Light** - 3-stage (solid/blink/fast-blink)
-- ✅ **Hour Meter** - Track total engine runtime
-- ✅ **Peak RPM Memory** - Record maximum achieved
-- ✅ **CPU/RAM Monitoring** - System health diagnostics
+- ✅ **Input ADC** - Temperature, battery, charging voltage
+- ✅ **Shift Light** - 3 tahap (nyala/kedip/kedip cepat)
+- ✅ **Hour Meter** - Track total waktu mesin jalan
+- ✅ **Peak RPM Memory** - Rekam RPM maksimum
+- ✅ **CPU/RAM Monitoring** - Diagnostik kesehatan sistem
 
 ---
 
-## 🌟 What Makes This Special
+## 🌟 Apa yang Bikin Ini Special
 
-### **1. Timing Precision**
+### **1. Presisi Timing**
 
-**Claim:** <0.01° jitter at all RPM
+**Klaim:** Jitter <0.01° di semua RPM
 
-**Reality:**
+**Kenyataannya:**
 
-- Hardware input capture (TIM2) timestamps VR signal with 0.1µs resolution
-- Hardware output compare (TIM3) fires ignition with same precision
-- Zero software delay in critical path
-- ISR execution time: ~0.8µs (negligible)
+- Hardware input capture (TIM2) timestamp sinyal VR dengan resolusi 0.1µs
+- Hardware output compare (TIM3) nyalain pengapian dengan presisi sama
+- Zero software delay di jalur kritis
+- Waktu eksekusi ISR: ~0.8µs (negligible)
 
-**Comparison:**
+**Perbandingan:**
 
-- Budget CDI: 0.5-2° jitter (polling-based)
-- This CDI: <0.01° jitter (hardware-based)
-- MoTeC M150: ~0.1° jitter (high-end commercial)
+- CDI murahan: 0.5-2° jitter (pakai polling)
+- CDI ini: <0.01° jitter (pakai hardware)
+- MoTeC M150: ~0.1° jitter (komersial high-end)
 
-**Verdict:** ✅ **TRUE** - Measured and verified
-
----
-
-### **2. Phase Correction (Unique Feature)**
-
-**Claim:** Self-correcting timing based on actual crank position
-
-**Reality:**
-
-- Compares predicted vs actual period each cycle
-- Applies small correction (1/16 gain) to next fire
-- Reduces timing error from ±0.5° to ±0.1° during acceleration
-- Most budget CDIs don't have this feature
-
-**Real-World Benefit:**
-
-- More consistent power delivery during acceleration
-- Sharper throttle response
-- Less ping/knock on aggressive timing
-
-**Verdict:** ✅ **TRUE** - Actually works, not marketing fluff
+**Verdik:** ✅ **BENER** - Sudah diukur dan diverifikasi
 
 ---
 
-### **3. Predictive Timing (dRPM Compensation)**
+### **2. Phase Correction (Fitur Unik)**
 
-**Claim:** Anticipates RPM change for better response
+**Klaim:** Timing self-correcting berdasarkan posisi kruk as sebenarnya
 
-**Reality:**
+**Kenyataannya:**
 
-- Calculates RPM change per cycle (dRPM)
-- Adds ~0.003° advance per RPM/cycle of acceleration
-- Clamped to ±1.5° maximum adjustment
-- Only active above 4000 RPM for stability
+- Bandingkan periode prediksi vs aktual setiap siklus
+- Terapkan koreksi kecil (gain 1/16) ke pengapian berikutnya
+- Kurangi error timing dari ±0.5° jadi ±0.1° saat akselerasi
+- Kebanyakan CDI murahan ga punya fitur ini
 
-**Real-World Benefit:**
+**Manfaat di Dunia Nyata:**
 
-- Slightly sharper throttle response
-- Compensates for delay between trigger and fire
-- Effect is subtle, not revolutionary
+- Power delivery lebih konsisten saat akselerasi
+- Throttle response lebih tajam
+- Lebih sedikit ngelitik/ping di timing agresif
 
-**Verdict:** ✅ **TRUE** - Works but effect is incremental, not dramatic
+**Verdik:** ✅ **BENER** - Beneran kerja, bukan marketing doang
 
 ---
 
-### **4. Multi-Map System**
+### **3. Predictive Timing (Kompensasi dRPM)**
 
-**Claim:** 6 independent ignition maps, switch on-the-fly
+**Klaim:** Antisipasi perubahan RPM untuk respon lebih baik
 
-**Reality:**
+**Kenyataannya:**
 
-- 6 maps stored on SD card
-- Switch with button press (PA2 or PC13)
-- Can edit while engine running (uses safety map during edit)
-- Each map has 81 points (0-20k RPM in 250 RPM steps)
+- Hitung perubahan RPM per siklus (dRPM)
+- Tambah ~0.003° advance per RPM/cycle akselerasi
+- Dibatasi maksimal ±1.5° adjustment
+- Cuma aktif di atas 4000 RPM untuk stabilitas
 
-**Real-World Use:**
+**Manfaat di Dunia Nyata:**
 
-- Map 1: Conservative (pump gas)
-- Map 2: Race (high octane)
-- Map 3: Rain (safer timing)
-- Map 4: Different track/altitude
+- Throttle response sedikit lebih tajam
+- Kompensasi delay antara trigger dan fire
+- Efeknya subtle, bukan revolutionary
+
+**Verdik:** ✅ **BENER** - Kerja tapi efeknya incremental, bukan dramatis
+
+---
+
+### **4. Sistem Multi-Map**
+
+**Klaim:** 6 ignition map independen, ganti on-the-fly
+
+**Kenyataannya:**
+
+- 6 map tersimpan di SD card
+- Ganti dengan tombol (PA2 atau PC13)
+- Bisa edit sambil mesin nyala (pakai safety map saat edit)
+- Tiap map punya 81 titik (0-20k RPM dalam step 250 RPM)
+
+**Penggunaan di Dunia Nyata:**
+
+- Map 1: Konservatif (bensin pompa)
+- Map 2: Balap (oktan tinggi)
+- Map 3: Hujan (timing lebih aman)
+- Map 4: Beda track/altitude
 - Map 5: Testing/development
 - Map 6: Emergency/limp mode
 
-**Verdict:** ✅ **TRUE** - Fully functional, very useful
+**Verdik:** ✅ **BENER** - Fully functional, sangat berguna
 
 ---
 
 ### **5. Web UI**
 
-**Claim:** Professional web-based control panel
+**Klaim:** Control panel berbasis web yang profesional
 
-**Reality:**
+**Kenyataannya:**
 
-- Requires Python 3 + aiohttp + pyserial
-- Browser connects to localhost:8080
-- 20Hz update rate (smooth but not instant)
-- Visual map editor works well
-- Some features still in development
+- Butuh Python 3 + aiohttp + pyserial
+- Browser connect ke localhost:8080
+- Update rate 20Hz (smooth tapi bukan instant)
+- Visual map editor kerja dengan baik
+- Beberapa fitur masih dalam development
 
-**Real-World Experience:**
+**Pengalaman di Dunia Nyata:**
 
-- Setup: 5 minutes (install Python deps + run script)
-- UI: Clean and responsive on desktop
-- Mobile: Works but better on tablet/laptop
-- Stability: Good, occasional WebSocket reconnects
+- Setup: 5 menit (install Python deps + run script)
+- UI: Clean dan responsive di desktop
+- Mobile: Kerja tapi lebih enak di tablet/laptop
+- Stabilitas: Bagus, kadang WebSocket reconnect
 
-**Verdict:** ✅ **TRUE** - Actually usable, not just a demo
+**Verdik:** ✅ **BENER** - Beneran bisa dipakai, bukan cuma demo
 
 ---
 
-## 💪 Strengths (What It Does Really Well)
+## 💪 Kelebihan (Yang Beneran Bagus)
 
-### **1. Timing Accuracy**
+### **1. Akurasi Timing**
 
 **Rating: ⭐⭐⭐⭐⭐ (Excellent)**
 
-Hardware-based timing is genuinely professional grade. This isn't marketing - the jitter is actually <0.01° at all RPM. Comparable to commercial ECUs costing thousands.
+Timing berbasis hardware beneran level profesional. Ini bukan marketing - jitter-nya emang <0.01° di semua RPM. Comparable sama ECU komersial yang harganya puluhan juta.
 
-**Why it matters:** Consistent timing = consistent power, less knock, safer aggressive tuning.
+**Kenapa penting:** Timing konsisten = tenaga konsisten, lebih sedikit ngelitik, tuning agresif lebih aman.
 
 ---
 
-### **2. Cost-Effectiveness**
+### **2. Efektif dari Sisi Biaya**
 
 **Rating: ⭐⭐⭐⭐⭐ (Excellent)**
 
 **Bill of Materials:**
 
-- STM32H562 board: ~$10
-- MAX9926 VR conditioner: ~$3
-- MicroSD card: ~$5
-- Voltage regulator + passives: ~$2
-- **Total: ~$20**
+- Board STM32H562: ~130rb
+- MAX9926 VR conditioner: ~40rb
+- MicroSD card: ~65rb
+- Voltage regulator + komponen: ~25rb
+- **Total: ~260rb**
 
-**Alternatives:**
+**Alternatif:**
 
-- Generic programmable CDI: $200-400
-- Dynatek: $300-600
-- MoTeC M150: $5,000+
+- CDI programmable generic: 3-5 juta
+- Dynatek: 4-8 juta
+- MoTeC M150: 70+ juta
 
-**Verdict:** 10-250x cheaper than alternatives with similar features.
+**Verdik:** 10-250x lebih murah dari alternatif dengan fitur serupa.
 
 ---
 
-### **3. Configurability**
+### **3. Kemudahan Konfigurasi**
 
 **Rating: ⭐⭐⭐⭐⭐ (Excellent)**
 
-Text-based config files are genuinely user-friendly:
+File konfigurasi berbasis text emang user-friendly:
 
 ```
-# You can edit this with Notepad!
+# Lo bisa edit ini pakai Notepad!
 TRIGGER_ANGLE=60.0
 LIMITER_SOFT=9500
 ENGINE_TYPE=2
 ```
 
-No proprietary software required. Copy files, edit values, reload. Simple.
+Ga perlu software proprietary. Copy file, edit nilai, reload. Simple.
 
 ---
 
-### **4. Open Source & Customizable**
+### **4. Open Source & Bisa Dikustomisasi**
 
 **Rating: ⭐⭐⭐⭐⭐ (Excellent)**
 
-Full source code available. If you need custom features:
+Full source code tersedia. Kalau lo perlu fitur custom:
 
-- Add CAN bus support
-- Integrate with other sensors
-- Modify algorithms
-- Port to different hardware
+- Tambah CAN bus support
+- Integrasi sensor lain
+- Modifikasi algoritma
+- Port ke hardware berbeda
 
-Commercial CDIs lock you in. This doesn't.
+CDI komersial lock lo in. Ini nggak.
 
 ---
 
@@ -270,582 +270,582 @@ Commercial CDIs lock you in. This doesn't.
 
 **Rating: ⭐⭐⭐⭐☆ (Very Good)**
 
-1Hz CSV logging is adequate for most analysis:
+Logging CSV 1Hz cukup untuk analisa umumnya:
 
 ```csv
 Time,RPM,Timing,Temp,Battery,Limiter
 12:30:01,5420,24.5,45,12.6,0
 ```
 
-**Limitation:** 1Hz isn't fast enough for cycle-by-cycle analysis. For that, you'd need 100+ Hz logging (would fill SD card quickly).
+**Keterbatasan:** 1Hz ga cukup cepat untuk analisa cycle-by-cycle. Untuk itu lo butuh 100+ Hz logging (bakal cepet penuh SD card).
 
-**Verdict:** Good for general tuning, not for deep dive analysis.
+**Verdik:** Bagus untuk tuning umum, bukan untuk deep dive analysis.
 
 ---
 
-### **6. Quick Shifter Integration**
+### **6. Integrasi Quick Shifter**
 
 **Rating: ⭐⭐⭐⭐☆ (Very Good)**
 
-RPM-based cut time map is clever:
+Map cut time berbasis RPM cerdas:
 
-- Short cut at high RPM (fast shifts)
-- Longer cut at low RPM (smoother shifts)
+- Cut pendek di RPM tinggi (shift cepat)
+- Cut lebih lama di RPM rendah (shift lebih smooth)
 
-**Limitation:** Requires strain gauge sensor (not included). Quality sensors cost $50-150.
-
----
-
-## 🔴 Weaknesses (Honest Limitations)
-
-### **1. DIY Build Required**
-
-**Rating: ⚠️ Moderate Difficulty**
-
-**Reality Check:**
-
-- This is NOT plug-and-play
-- Requires soldering, wiring, configuration
-- Need basic electronics knowledge
-- Testing requires patience and safety precautions
-
-**Who can build this:**
-
-- ✅ Electronics hobbyists
-- ✅ Experienced DIY builders
-- ✅ Mechanics with tech skills
-- ❌ Beginners with no soldering experience
-- ❌ People wanting turnkey solution
-
-**Time investment:**
-
-- Build: 2-4 hours (PCB) or 4-8 hours (perfboard)
-- Initial setup: 1-2 hours
-- Tuning: Ongoing (dyno recommended)
+**Keterbatasan:** Butuh sensor strain gauge (ga termasuk). Sensor berkualitas harga 700rb-2 juta.
 
 ---
 
-### **2. No Official PCB (Yet)**
+## 🔴 Kekurangan (Keterbatasan yang Jujur)
 
-**Rating: ⚠️ Minor Inconvenience**
+### **1. Harus Rakit DIY**
 
-**Current situation:**
+**Rating: ⚠️ Kesulitan Moderate**
 
-- Prototype on breadboard/perfboard works
-- Eagle files provided but not tested in production
-- No ready-made PCB available for purchase
+**Cek Realita:**
 
-**Options:**
+- Ini BUKAN plug-and-play
+- Butuh soldering, wiring, konfigurasi
+- Perlu pengetahuan elektronik dasar
+- Testing butuh kesabaran dan perhatian safety
 
-1. Order custom PCB from Gerbers (add ~$20 + shipping)
-2. Use development board + wiring (easier but bulkier)
-3. Design your own PCB (advanced users)
+**Siapa yang bisa bikin ini:**
 
-**Impact:** Adds complexity to build process.
+- ✅ Hobbyist elektronik
+- ✅ Builder DIY berpengalaman
+- ✅ Mekanik dengan skill teknis
+- ❌ Pemula tanpa pengalaman solder
+- ❌ Orang yang mau solusi instant
 
----
+**Investasi waktu:**
 
-### **3. Limited Support**
-
-**Rating: ⚠️ Community-Based**
-
-**Reality:**
-
-- No customer service hotline
-- No warranty or guarantee
-- Community support via GitHub issues
-- Documentation comprehensive but DIY troubleshooting required
-
-**Comparison:**
-
-- MoTeC: Professional support, training courses
-- This: GitHub discussions, community help
-
-**Who this suits:**
-
-- ✅ Self-sufficient builders
-- ✅ People comfortable troubleshooting
-- ❌ Users expecting hand-holding
+- Rakit: 2-4 jam (PCB) atau 4-8 jam (perfboard)
+- Setup awal: 1-2 jam
+- Tuning: Ongoing (rekomendasi dyno)
 
 ---
 
-### **4. Single Cylinder Only**
+### **2. Belum Ada PCB Official (Belum)**
 
-**Rating: ⚠️ Design Limitation**
+**Rating: ⚠️ Ketidaknyamanan Minor**
 
-**Current design:**
+**Situasi saat ini:**
+
+- Prototype di breadboard/perfboard jalan
+- File Eagle disediakan tapi belum tested di production
+- Belum ada PCB ready-made yang bisa dibeli
+
+**Opsi:**
+
+1. Order PCB custom dari Gerber (tambah ~260rb + ongkir)
+2. Pakai development board + wiring (lebih mudah tapi lebih besar)
+3. Desain PCB sendiri (user advanced)
+
+**Dampak:** Nambahin kompleksitas proses rakit.
+
+---
+
+### **3. Support Terbatas**
+
+**Rating: ⚠️ Berbasis Komunitas**
+
+**Realita:**
+
+- Ga ada customer service hotline
+- Ga ada garansi atau jaminan
+- Support komunitas lewat GitHub issues
+- Dokumentasi lengkap tapi troubleshooting DIY required
+
+**Perbandingan:**
+
+- MoTeC: Support profesional, training courses
+- Ini: GitHub discussions, community help
+
+**Cocok untuk siapa:**
+
+- ✅ Builder yang mandiri
+- ✅ Orang yang nyaman troubleshooting sendiri
+- ❌ User yang expect hand-holding
+
+---
+
+### **4. Cuma Single Cylinder**
+
+**Rating: ⚠️ Keterbatasan Desain**
+
+**Desain saat ini:**
 
 - 1 VR input, 1 CDI output
-- Perfect for single-cylinder 2-stroke or 4-stroke
-- **Cannot control multi-cylinder engines**
+- Perfect untuk single-cylinder 2-tak atau 4-tak
+- **GA BISA kontrol mesin multi-cylinder**
 
-**What you'd need for multi-cylinder:**
+**Yang lo butuh untuk multi-cylinder:**
 
-- Major code rewrite
+- Rewrite kode major
 - Multiple timer channels
-- Cam position sensor (for firing order)
-- Different wiring
+- Sensor posisi cam (untuk firing order)
+- Wiring berbeda
 
-**Verdict:** Great for MX bikes, pit bikes, single-cylinder racing. Not suitable for sport bikes, twins, or multi-cylinder engines without significant modification.
-
----
-
-### **5. No Fuel Injection Control**
-
-**Rating: ⚠️ Ignition Only**
-
-**What it does:**
-
-- ✅ Ignition timing only
-- ❌ No fuel injection
-- ❌ No injector pulse width modulation
-- ❌ No lambda/O2 sensor integration
-
-**For carbureted engines:** Perfect!  
-**For fuel injected engines:** You still need a separate fuel controller.
+**Verdik:** Bagus untuk motor MX, pit bike, single-cylinder racing. Ga cocok untuk sport bike, twin, atau multi-cylinder tanpa modifikasi signifikan.
 
 ---
 
-### **6. VR Sensor Required**
+### **5. Ga Ada Kontrol Fuel Injection**
 
-**Rating: ⚠️ Hardware Dependency**
+**Rating: ⚠️ Cuma Pengapian**
 
-**Requirements:**
+**Yang bisa:**
 
-- VR (Variable Reluctance) sensor or hall-effect pickup
-- MAX9926 (or similar) conditioner to convert to digital
-- Proper trigger wheel or flywheel magnet
+- ✅ Timing pengapian aja
+- ❌ Ga ada fuel injection
+- ❌ Ga ada injector pulse width modulation
+- ❌ Ga ada integrasi lambda/O2 sensor
 
-**If your bike doesn't have VR sensor:**
+**Untuk mesin karburator:** Perfect!  
+**Untuk mesin injeksi:** Lo masih butuh fuel controller terpisah.
 
-- Need to install trigger wheel/magnet
-- Add VR sensor to engine
-- May require machine work
+---
 
-**Not compatible with:**
+### **6. Butuh VR Sensor**
 
-- Optical triggers (without modification)
+**Rating: ⚠️ Ketergantungan Hardware**
+
+**Persyaratan:**
+
+- VR (Variable Reluctance) sensor atau hall-effect pickup
+- MAX9926 (atau sejenisnya) conditioner untuk convert ke digital
+- Trigger wheel atau magnet flywheel yang proper
+
+**Kalau motor lo ga punya VR sensor:**
+
+- Perlu install trigger wheel/magnet
+- Tambah VR sensor ke mesin
+- Mungkin perlu machine work
+
+**Ga compatible dengan:**
+
+- Optical triggers (tanpa modifikasi)
 - Capacitive sensors
-- Direct coil drive from points/CDI
+- Direct coil drive dari platina/CDI
 
 ---
 
-### **7. Web UI Requires Computer**
+### **7. Web UI Butuh Komputer**
 
-**Rating: ⚠️ Not Standalone**
+**Rating: ⚠️ Bukan Standalone**
 
-**To use Web UI:**
+**Untuk pakai Web UI:**
 
-- Need laptop/PC running bridge.py
-- Python installation required
-- USB cable connection
-- Can't use Web UI while riding (obviously)
+- Butuh laptop/PC running bridge.py
+- Instalasi Python required
+- Koneksi kabel USB
+- Ga bisa pakai Web UI sambil riding (obviously)
 
-**Alternatives:**
+**Alternatif:**
 
-- Use SD card config files (edit with Notepad)
+- Pakai file config di SD card (edit dengan Notepad)
 - USB serial terminal (minicom, PuTTY, screen)
 
-**Not a dealbreaker, but not as convenient as:**
+**Bukan dealbreaker, tapi ga seconvenient:**
 
-- Bluetooth smartphone app (not available yet)
-- Standalone LCD display (not implemented)
+- Bluetooth smartphone app (belum tersedia)
+- Standalone LCD display (belum diimplementasi)
 
 ---
 
-### **8. Testing Requires Care**
+### **8. Testing Butuh Hati-hati**
 
 **Rating: ⚠️⚠️ Safety Critical**
 
-**IMPORTANT:**
+**PENTING:**
 
-- Incorrect timing can damage engine
-- Over-advanced timing causes knock/detonation
-- Wrong trigger angle can fire at wrong time
-- Testing should be done cautiously
+- Timing yang salah bisa rusak mesin
+- Over-advanced timing bikin ngelitik/detonasi
+- Trigger angle yang salah bisa nyalain di waktu yang salah
+- Testing harus dilakukan dengan hati-hati
 
-**Recommended approach:**
+**Pendekatan yang direkomendasikan:**
 
-1. Start with conservative timing (8-12° across range)
-2. Verify trigger angle with timing light
-3. Test on dyno or safe environment
-4. Gradually advance timing while monitoring
-5. Have mechanic review if unsure
+1. Mulai dengan timing konservatif (8-12° across range)
+2. Verifikasi trigger angle dengan timing light
+3. Test di dyno atau environment yang aman
+4. Gradually advance timing sambil monitoring
+5. Minta mekanik review kalau ragu
 
-**This is not "upload and go" - requires tuning knowledge.**
+**Ini bukan "upload and go" - butuh pengetahuan tuning.**
 
 ---
 
-### **9. Limited Dyno Data**
+### **9. Data Dyno Terbatas**
 
-**Rating: ⚠️ Early Development**
+**Rating: ⚠️ Development Awal**
 
-**Current status:**
+**Status saat ini:**
 
-- Code is tested and works
-- Timing accuracy verified with oscilloscope
+- Kode sudah tested dan jalan
+- Akurasi timing diverifikasi dengan oscilloscope
 - Real-world testing ongoing
-- **Not yet extensively dyno-proven across many bikes**
+- **Belum extensively dyno-proven across banyak motor**
 
-**What this means:**
+**Artinya:**
 
-- Example maps provided are starting points, not optimized
-- You'll need to tune for your specific engine
-- No guaranteed HP gains (depends on your tuning)
+- Contoh map yang disediakan adalah starting point, bukan optimized
+- Lo perlu tuning untuk mesin spesifik lo
+- Ga ada jaminan HP gains (tergantung tuning lo)
 
-**Honest expectation:**
+**Ekspektasi yang jujur:**
 
-- Well-tuned map: 0-5% HP gain over stock (if stock timing is poor)
-- Poorly tuned map: Potential HP loss or engine damage
-- Main benefit: Programmability and control, not magic HP
+- Map yang well-tuned: 0-5% HP gain over stock (kalau stock timing jelek)
+- Map yang poorly tuned: Potensi HP loss atau kerusakan mesin
+- Manfaat utama: Programmability dan kontrol, bukan magic HP
 
 ---
 
-### **10. No Emissions Compliance**
+### **10. Ga Ada Compliance Emisi**
 
-**Rating: ⚠️⚠️ Legal Consideration**
+**Rating: ⚠️⚠️ Pertimbangan Legal**
 
-**Reality:**
+**Realita:**
 
-- Modifying ignition timing may violate emissions laws
-- May not be street legal in your jurisdiction
-- Racing use only in most places
-- Check local regulations
+- Modifikasi timing pengapian mungkin melanggar hukum emisi
+- Mungkin ga street legal di yurisdiksi lo
+- Racing use only di kebanyakan tempat
+- Cek regulasi lokal
 
-**Not suitable for:**
+**Ga cocok untuk:**
 
-- Street bikes in emissions-regulated areas
-- Bikes requiring periodic inspections
-- Vehicles needing emissions compliance
+- Motor jalanan di area dengan regulasi emisi
+- Motor yang butuh inspeksi periodik
+- Kendaraan yang perlu compliance emisi
 
-**Intended for:**
+**Ditujukan untuk:**
 
-- Race bikes (closed course only)
+- Motor balap (closed course only)
 - Off-road use
-- Countries without strict emissions laws
-- Educational/research purposes
+- Negara tanpa strict emissions laws
+- Tujuan edukasi/riset
 
 ---
 
-## 📊 Realistic Comparison Chart
+## 📊 Tabel Perbandingan Realistis
 
-### **vs Budget CDI ($50-200)**
+### **vs CDI Murahan (500rb-3 juta)**
 
-| Feature         | Budget CDI       | Racing CDI (This)  | Winner        |
-| --------------- | ---------------- | ------------------ | ------------- |
-| Timing Accuracy | 0.5-2°           | <0.01°             | ✅ **This**   |
-| Configuration   | Fixed or 1 curve | 6 maps × 81 points | ✅ **This**   |
-| Rev Limiter     | Hard cut only    | 4 stages           | ✅ **This**   |
-| Quick Shifter   | None             | Yes (RPM-based)    | ✅ **This**   |
-| Data Logging    | None             | CSV to SD          | ✅ **This**   |
-| Ease of Install | Plug-and-play    | DIY build          | ✅ **Budget** |
-| Support         | Manufacturer     | Community          | ✅ **Budget** |
-| Warranty        | Yes (1 year)     | None               | ✅ **Budget** |
-| Price           | $50-200          | ~$20               | ✅ **This**   |
+| Fitur             | CDI Murahan        | Racing CDI (Ini)   | Pemenang       |
+| ----------------- | ------------------ | ------------------ | -------------- |
+| Akurasi Timing    | 0.5-2°             | <0.01°             | ✅ **Ini**     |
+| Konfigurasi       | Fixed atau 1 kurva | 6 maps × 81 points | ✅ **Ini**     |
+| Rev Limiter       | Hard cut aja       | 4 tahap            | ✅ **Ini**     |
+| Quick Shifter     | Ga ada             | Ya (RPM-based)     | ✅ **Ini**     |
+| Data Logging      | Ga ada             | CSV ke SD          | ✅ **Ini**     |
+| Kemudahan Install | Plug-and-play      | Rakit DIY          | ✅ **Murahan** |
+| Support           | Manufacturer       | Komunitas          | ✅ **Murahan** |
+| Garansi           | Ya (1 tahun)       | Ga ada             | ✅ **Murahan** |
+| Harga             | 500rb-3 juta       | ~260rb             | ✅ **Ini**     |
 
-**Verdict:** Better performance and features, but requires DIY skills.
-
----
-
-### **vs MoTeC M150 ($5,000+)**
-
-| Feature              | MoTeC M150  | Racing CDI (This) | Winner       |
-| -------------------- | ----------- | ----------------- | ------------ |
-| Timing Accuracy      | ~0.1°       | <0.01°            | ✅ **This**  |
-| Multi-Cylinder       | Yes         | No (single only)  | ✅ **MoTeC** |
-| Fuel Injection       | Yes         | No                | ✅ **MoTeC** |
-| CAN Bus              | Yes         | No (yet)          | ✅ **MoTeC** |
-| Data Logging         | 1000+ Hz    | 1 Hz              | ✅ **MoTeC** |
-| Professional Support | Excellent   | Community         | ✅ **MoTeC** |
-| Dyno-Proven          | Yes         | Limited           | ✅ **MoTeC** |
-| Map Editor           | Desktop app | Web UI            | 🤝 **Tie**   |
-| Quick Shifter        | Yes         | Yes (RPM-based)   | 🤝 **Tie**   |
-| Phase Correction     | Yes         | Yes               | 🤝 **Tie**   |
-| Open Source          | No          | Yes               | ✅ **This**  |
-| Price                | $5,000+     | ~$20              | ✅ **This**  |
-
-**Verdict:** MoTeC is more complete and proven. This is 250x cheaper for single-cylinder racing.
+**Verdik:** Performa dan fitur lebih bagus, tapi butuh skill DIY.
 
 ---
 
-## 🎯 Who Should Use This?
+### **vs MoTeC M150 (70+ juta)**
 
-### ✅ **Perfect For:**
+| Fitur               | MoTeC M150  | Racing CDI (Ini) | Pemenang     |
+| ------------------- | ----------- | ---------------- | ------------ |
+| Akurasi Timing      | ~0.1°       | <0.01°           | ✅ **Ini**   |
+| Multi-Cylinder      | Ya          | Ga (single aja)  | ✅ **MoTeC** |
+| Fuel Injection      | Ya          | Ga               | ✅ **MoTeC** |
+| CAN Bus             | Ya          | Ga (yet)         | ✅ **MoTeC** |
+| Data Logging        | 1000+ Hz    | 1 Hz             | ✅ **MoTeC** |
+| Support Profesional | Excellent   | Komunitas        | ✅ **MoTeC** |
+| Dyno-Proven         | Ya          | Terbatas         | ✅ **MoTeC** |
+| Map Editor          | Desktop app | Web UI           | 🤝 **Seri**  |
+| Quick Shifter       | Ya          | Ya (RPM-based)   | 🤝 **Seri**  |
+| Phase Correction    | Ya          | Ya               | 🤝 **Seri**  |
+| Open Source         | Ga          | Ya               | ✅ **Ini**   |
+| Harga               | 70+ juta    | ~260rb           | ✅ **Ini**   |
+
+**Verdik:** MoTeC lebih complete dan proven. Ini 250x lebih murah untuk single-cylinder racing.
+
+---
+
+## 🎯 Siapa yang Cocok Pakai Ini?
+
+### ✅ **Perfect Untuk:**
 
 1. **Racing Enthusiasts**
 
-   - Single-cylinder race bikes
-   - Want programmable ignition
-   - Comfortable with DIY
+   - Motor balap single-cylinder
+   - Mau pengapian programmable
+   - Nyaman dengan DIY
    - Budget-conscious
 
-2. **Tuners & Builders**
+2. **Tuner & Builder**
 
-   - Custom bike projects
-   - Engine development
+   - Proyek motor custom
+   - Pengembangan mesin
    - Dyno tuning
-   - Need data logging
+   - Butuh data logging
 
-3. **Tech-Savvy Mechanics**
+3. **Mekanik yang Tech-Savvy**
 
-   - Electronics skills
-   - Troubleshooting ability
-   - Want to learn embedded systems
-   - Open-source advocates
+   - Skill elektronik
+   - Kemampuan troubleshooting
+   - Mau belajar embedded systems
+   - Pendukung open-source
 
-4. **Students & Researchers**
-   - Educational projects
-   - Engine timing research
-   - Embedded systems learning
-   - University racing teams
+4. **Mahasiswa & Peneliti**
+   - Proyek edukasi
+   - Riset timing mesin
+   - Belajar embedded systems
+   - Tim balap universitas
 
-### ❌ **NOT Recommended For:**
+### ❌ **TIDAK Direkomendasikan Untuk:**
 
-1. **Beginners**
+1. **Pemula**
 
-   - No electronics experience
-   - First time working on bikes
-   - Uncomfortable with troubleshooting
-   - Want plug-and-play solution
+   - Ga ada pengalaman elektronik
+   - Pertama kali utak-atik motor
+   - Ga nyaman troubleshooting
+   - Mau solusi plug-and-play
 
-2. **Multi-Cylinder Bikes**
+2. **Motor Multi-Cylinder**
 
-   - Sport bikes (2/4/6 cylinder)
-   - Inline-4 engines
-   - Need synchronized ignition
-   - (Would require major code rewrite)
+   - Sport bike (2/4/6 cylinder)
+   - Mesin inline-4
+   - Butuh synchronized ignition
+   - (Perlu major code rewrite)
 
-3. **Street Legal Requirements**
+3. **Persyaratan Street Legal**
 
-   - Emissions-regulated areas
-   - Need certification/approval
-   - Inspection requirements
-   - Legal compliance critical
+   - Area dengan regulasi emisi
+   - Butuh sertifikasi/approval
+   - Persyaratan inspeksi
+   - Compliance legal critical
 
-4. **Mission-Critical Use**
-   - Professional racing (use proven commercial ECU)
-   - Reliability over experimentation
-   - Can't afford failures
-   - Need manufacturer support
-
----
-
-## 💰 True Cost Analysis
-
-### **Parts Cost:** ~$20-50
-
-| Item                   | Cost    |
-| ---------------------- | ------- |
-| STM32H562 board        | $10     |
-| MAX9926 VR conditioner | $3      |
-| MicroSD card (8GB)     | $5      |
-| Voltage regulator      | $1      |
-| Connectors + wire      | $5      |
-| Enclosure (optional)   | $10     |
-| **Minimum Total**      | **$24** |
-| **With extras**        | **$50** |
-
-### **Hidden Costs:**
-
-| Item                               | Cost     |
-| ---------------------------------- | -------- |
-| Soldering iron (if you don't have) | $20-50   |
-| Multimeter (for testing)           | $15-30   |
-| Oscilloscope (optional but useful) | $50-500  |
-| VR sensor (if bike doesn't have)   | $20-50   |
-| Quick shifter sensor (optional)    | $50-150  |
-| Dyno tuning (recommended)          | $100-300 |
-
-### **Time Cost:**
-
-| Activity                  | Time            |
-| ------------------------- | --------------- |
-| Parts ordering + shipping | 1-2 weeks       |
-| Building circuit          | 2-8 hours       |
-| Initial setup + config    | 1-2 hours       |
-| Testing + troubleshooting | 2-10 hours      |
-| Tuning on dyno            | 2-4 hours       |
-| **Total time investment** | **15-40 hours** |
-
-### **Total Real Cost:**
-
-**Minimum (have tools, experienced):** $24 + 15 hours  
-**Realistic (need tools, first build):** $200 + 40 hours  
-**With dyno tuning:** $500 + 50 hours
-
-**Still cheaper than commercial alternatives, but factor in time!**
+4. **Penggunaan Mission-Critical**
+   - Balap profesional (pakai ECU proven)
+   - Reliability lebih penting dari eksperimen
+   - Ga bisa afford failures
+   - Butuh manufacturer support
 
 ---
 
-## 🏁 Performance Expectations (Realistic)
+## 💰 Analisis Biaya Sesungguhnya
 
-### **What You WILL Get:**
+### **Biaya Parts:** ~260rb-650rb
 
-✅ **Programmable ignition** - Full control over timing  
-✅ **Precise timing** - <0.01° jitter, consistent firing  
-✅ **Multi-map capability** - Switch between maps easily  
-✅ **Rev limiter** - Protect engine with 4-stage limiting  
-✅ **Data logging** - Track RPM, timing, temps, etc.  
-✅ **Cost savings** - $20 vs $200-5000 commercial
+| Item                   | Biaya     |
+| ---------------------- | --------- |
+| Board STM32H562        | 130rb     |
+| MAX9926 VR conditioner | 40rb      |
+| MicroSD card (8GB)     | 65rb      |
+| Voltage regulator      | 13rb      |
+| Konektor + kabel       | 65rb      |
+| Enclosure (opsional)   | 130rb     |
+| **Total Minimum**      | **310rb** |
+| **Dengan extras**      | **650rb** |
 
-### **What You MIGHT Get:**
+### **Biaya Tersembunyi:**
 
-🤷 **Small HP gains** - 0-5% if stock timing was poor  
-🤷 **Better throttle response** - From phase correction + dRPM  
-🤷 **Smoother power** - From consistent timing  
-🤷 **Fuel economy improvement** - If tuned conservatively
+| Item                                 | Biaya         |
+| ------------------------------------ | ------------- |
+| Solder (kalau belum punya)           | 260-650rb     |
+| Multimeter (untuk testing)           | 200-390rb     |
+| Oscilloscope (opsional tapi berguna) | 650rb-6.5juta |
+| VR sensor (kalau motor ga punya)     | 260-650rb     |
+| Sensor quick shifter (opsional)      | 650rb-2juta   |
+| Dyno tuning (direkomendasikan)       | 1.3-3.9juta   |
 
-### **What You WON'T Get:**
+### **Biaya Waktu:**
 
-❌ **Magic horsepower** - It's ignition timing, not a turbo  
-❌ **Automatic tuning** - You still need to tune maps  
-❌ **Plug-and-play** - Requires build + config + testing  
-❌ **Multi-cylinder support** - Single cylinder only  
-❌ **Fuel injection control** - Ignition only
+| Aktivitas                 | Waktu         |
+| ------------------------- | ------------- |
+| Order parts + shipping    | 1-2 minggu    |
+| Rakit circuit             | 2-8 jam       |
+| Setup awal + config       | 1-2 jam       |
+| Testing + troubleshooting | 2-10 jam      |
+| Tuning di dyno            | 2-4 jam       |
+| **Total investasi waktu** | **15-40 jam** |
 
-### **Honest HP Expectations:**
+### **Total Biaya Real:**
 
-**Stock CDI with good timing:** +0-2% HP  
-**Stock CDI with poor timing:** +2-5% HP  
-**Aftermarket CDI (basic):** Similar HP, more features  
-**High-end ECU:** Similar HP for ignition alone
+**Minimum (punya tools, berpengalaman):** 310rb + 15 jam  
+**Realistis (butuh tools, build pertama):** 2.6 juta + 40 jam  
+**Dengan dyno tuning:** 6.5 juta + 50 jam
 
-**Main value:** Not massive HP gains, but **control, programmability, and cost savings.**
+**Masih lebih murah vs komersial, tapi harus faktor in waktu!**
 
 ---
 
-## 🎓 Skill Requirements
+## 🏁 Ekspektasi Performa (Realistis)
 
-### **Minimum Skills Needed:**
+### **Yang AKAN Lo Dapat:**
 
-| Skill            | Level Required | Why                          |
-| ---------------- | -------------- | ---------------------------- |
-| Soldering        | Intermediate   | PCB assembly or perfboard    |
-| Electronics      | Basic          | Understand voltages, signals |
-| Arduino/Code     | None           | Firmware pre-compiled        |
-| Text editing     | Basic          | Edit config files            |
-| Mechanical       | Intermediate   | Install on bike, wiring      |
-| Safety awareness | High           | Engine tuning can damage     |
+✅ **Pengapian programmable** - Full control timing  
+✅ **Timing presisi** - <0.01° jitter, firing konsisten  
+✅ **Multi-map capability** - Ganti antar map mudah  
+✅ **Rev limiter** - Proteksi mesin dengan 4-stage limiting  
+✅ **Data logging** - Track RPM, timing, temps, dll.  
+✅ **Hemat biaya** - 260rb vs 3juta-70juta komersial
+
+### **Yang MUNGKIN Lo Dapat:**
+
+🤷 **Small HP gains** - 0-5% kalau stock timing jelek  
+🤷 **Better throttle response** - Dari phase correction + dRPM  
+🤷 **Smoother power** - Dari timing konsisten  
+🤷 **Fuel economy improvement** - Kalau tuned konservatif
+
+### **Yang GA AKAN Lo Dapat:**
+
+❌ **Magic horsepower** - Ini timing pengapian, bukan turbo  
+❌ **Automatic tuning** - Lo masih harus tuning maps  
+❌ **Plug-and-play** - Butuh rakit + config + testing  
+❌ **Multi-cylinder support** - Single cylinder aja  
+❌ **Fuel injection control** - Cuma pengapian
+
+### **Ekspektasi HP yang Jujur:**
+
+**CDI stock dengan timing bagus:** +0-2% HP  
+**CDI stock dengan timing jelek:** +2-5% HP  
+**Aftermarket CDI (basic):** HP similar, lebih banyak fitur  
+**High-end ECU:** HP similar untuk ignition aja
+
+**Main value:** Bukan massive HP gains, tapi **kontrol, programmability, dan hemat biaya.**
+
+---
+
+## 🎓 Persyaratan Skill
+
+### **Skill Minimum yang Dibutuhkan:**
+
+| Skill            | Level Required | Kenapa                      |
+| ---------------- | -------------- | --------------------------- |
+| Soldering        | Intermediate   | Assembly PCB atau perfboard |
+| Elektronik       | Basic          | Paham voltages, signals     |
+| Arduino/Code     | None           | Firmware pre-compiled       |
+| Text editing     | Basic          | Edit config files           |
+| Mekanik          | Intermediate   | Install di motor, wiring    |
+| Safety awareness | High           | Tuning mesin bisa rusak     |
 
 ### **Learning Curve:**
 
-**Week 1:** Build hardware, flash firmware  
-**Week 2:** Basic config, test bench  
-**Week 3:** Install on bike, initial testing  
-**Week 4:** Tuning, optimization  
-**Month 2+:** Advanced features, refinement
+**Minggu 1:** Rakit hardware, flash firmware  
+**Minggu 2:** Config dasar, test bench  
+**Minggu 3:** Install di motor, initial testing  
+**Minggu 4:** Tuning, optimization  
+**Bulan 2+:** Advanced features, refinement
 
-**Difficulty Rating:** 6/10 (Challenging but doable with patience)
+**Rating Kesulitan:** 6/10 (Challenging tapi bisa dengan kesabaran)
 
 ---
 
-## ✅ Recommendation Matrix
+## ✅ Matriks Rekomendasi
 
-### **Should You Build This?**
+### **Cocok Bikin Ini?**
 
-**YES if:**
+**YA kalau:**
 
-- ✅ Single-cylinder racing bike
-- ✅ Comfortable with electronics
-- ✅ Want to learn embedded systems
+- ✅ Motor balap single-cylinder
+- ✅ Nyaman dengan elektronik
+- ✅ Mau belajar embedded systems
 - ✅ Budget-conscious
-- ✅ Time for DIY project
-- ✅ Have basic tools
-- ✅ Can troubleshoot issues
-- ✅ Understand ignition timing
+- ✅ Punya waktu untuk proyek DIY
+- ✅ Punya basic tools
+- ✅ Bisa troubleshoot issues
+- ✅ Paham ignition timing
 
-**MAYBE if:**
+**MUNGKIN kalau:**
 
-- 🤷 Limited electronics experience (be prepared to learn)
-- 🤷 Want quick shifter (need to buy sensor separately)
-- 🤷 Street bike (check local laws first)
-- 🤷 First tuning project (get help from experienced tuner)
+- 🤷 Pengalaman elektronik terbatas (siap belajar)
+- 🤷 Mau quick shifter (harus beli sensor terpisah)
+- 🤷 Motor jalanan (cek hukum lokal dulu)
+- 🤷 Proyek tuning pertama (minta bantuan tuner berpengalaman)
 
-**NO if:**
+**TIDAK kalau:**
 
-- ❌ Multi-cylinder bike
-- ❌ Want plug-and-play solution
-- ❌ No electronics experience
-- ❌ No time for DIY
-- ❌ Need manufacturer support
-- ❌ Emissions compliance required
-- ❌ Professional racing (use proven ECU)
+- ❌ Motor multi-cylinder
+- ❌ Mau solusi plug-and-play
+- ❌ Ga ada pengalaman elektronik
+- ❌ Ga ada waktu untuk DIY
+- ❌ Butuh manufacturer support
+- ❌ Perlu emissions compliance
+- ❌ Balap profesional (pakai ECU proven)
 
 ---
 
-## 📋 Final Verdict
+## 📋 Verdik Final
 
-### **What This Project Is:**
+### **Apa Proyek Ini Sebenarnya:**
 
-A **genuinely capable programmable CDI** with professional-grade timing precision, extensive features, and excellent value for money. The code quality is high, the hardware is proven, and the community support is growing.
+Sebuah **CDI programmable yang genuinely capable** dengan presisi timing level profesional, fitur ekstensif, dan value for money yang excellent. Kualitas kode tinggi, hardware proven, dan community support berkembang.
 
-### **What This Project Isn't:**
+### **Apa yang Bukan:**
 
-A **turnkey commercial product**. It requires building, configuring, and tuning. It's not for everyone, and it has limitations (single-cylinder, no fuel injection, DIY only).
+Sebuah **produk komersial turnkey**. Butuh rakit, configure, dan tuning. Bukan untuk semua orang, dan punya keterbatasan (single-cylinder, no fuel injection, DIY only).
 
-### **The Bottom Line:**
+### **Bottom Line:**
 
-If you're comfortable with DIY electronics, want full control over your ignition, and have a single-cylinder racing bike, **this is an excellent project**. The timing accuracy rivals systems costing 100x more, and the feature set is comprehensive.
+Kalau lo nyaman dengan elektronik DIY, mau full control ignition, dan punya motor balap single-cylinder, **ini proyek yang excellent**. Akurasi timing rival sistem yang harganya 100x lebih mahal, dan feature set-nya comprehensive.
 
-If you want a plug-and-play solution or have a multi-cylinder bike, **look elsewhere**.
+Kalau lo mau solusi plug-and-play atau punya motor multi-cylinder, **cari yang lain**.
 
 ### **Overall Rating:**
 
-**For Target Audience:** ⭐⭐⭐⭐⭐ (5/5)  
-**For General Public:** ⭐⭐⭐☆☆ (3/5)
+**Untuk Target Audience:** ⭐⭐⭐⭐⭐ (5/5)  
+**Untuk Umum:** ⭐⭐⭐☆☆ (3/5)
 
-The rating difference is because this is **perfect for its intended audience** but **not suitable for everyone**.
+Beda rating karena ini **perfect untuk intended audience** tapi **ga cocok untuk semua orang**.
 
 ---
 
-## 🎤 User Testimonials (Hypothetical - Real ones TBD)
+## 🎤 Testimoni User (Hipotesis - Real ones TBD)
 
-### **"Best $20 I've spent on my YZ125!"**
+### **"Best 260rb yang gue keluarin untuk YZ125 gue!"**
 
-_- MX racer, 3 years experience_
+_- Racer MX, 3 tahun pengalaman_
 
-"Built this for my 2-stroke race bike. Timing accuracy is insane - dyno confirmed my ignition curve is spot-on now. Quick shifter works great with a $60 strain gauge. DIY build took me 4 hours. Totally worth it."
+"Gue rakit ini untuk motor balap 2-tak gue. Akurasi timing gila - dyno confirm kurva pengapian gue spot-on sekarang. Quick shifter kerja mantap dengan strain gauge 780rb. Build DIY cuma 4 jam. Totally worth it."
 
 **Rating:** ⭐⭐⭐⭐⭐
 
 ---
 
-### **"Steep learning curve but powerful"**
+### **"Learning curve curam tapi powerful"**
 
 _- First-time builder_
 
-"Took me longer than expected (10+ hours) because I had to learn Arduino and electronics basics. Once running, works great. Web UI is really helpful for tuning. Wish there was a pre-made PCB option."
+"Butuh waktu lebih lama dari expected (10+ jam) karena harus belajar Arduino dan dasar elektronik. Setelah running, kerja bagus. Web UI sangat membantu untuk tuning. Pengen ada opsi PCB pre-made."
 
 **Rating:** ⭐⭐⭐⭐☆
 
 ---
 
-### **"Not for me - went with commercial CDI"**
+### **"Bukan untuk gue - beli CDI komersial aja"**
 
 _- Weekend racer_
 
-"Started building but realized I don't have time to troubleshoot. Ordered a Dynatek instead. This is cool if you enjoy DIY, but I just want to ride."
+"Mulai rakit tapi sadar gue ga punya waktu untuk troubleshoot. Order Dynatek aja. Ini keren kalau lo enjoy DIY, tapi gue cuma mau riding."
 
-**Rating:** ⭐⭐⭐☆☆ (Not bad, just wrong audience)
+**Rating:** ⭐⭐⭐☆☆ (Bukan jelek, cuma wrong audience)
 
 ---
 
-## 📞 Support & Community
+## 📞 Support & Komunitas
 
 **GitHub:** Issues, discussions, pull requests  
-**Documentation:** Comprehensive but DIY-focused  
-**Response Time:** Community-dependent (hours to days)  
-**Commercial Support:** Not available
+**Dokumentasi:** Comprehensive tapi DIY-focused  
+**Response Time:** Tergantung komunitas (jam ke hari)  
+**Commercial Support:** Ga tersedia
 
-**Comparison to commercial:**
+**Perbandingan dengan komersial:**
 
 - MoTeC: Phone support, training courses
-- This: GitHub issues, community help
-- **Trade-off:** Price vs. support level
+- Ini: GitHub issues, community help
+- **Trade-off:** Harga vs. level support
 
 ---
 
-## 🔮 Future Roadmap (Planned, Not Promises)
+## 🔮 Roadmap Masa Depan (Planned, Bukan Janji)
 
 **v2.0 (Planned):**
 
@@ -861,56 +861,56 @@ _- Weekend racer_
 - Fuel injection (alpha-N)
 - Closed-loop O2 control
 
-**Realistic Timeline:** Years, not months. This is community-driven.
+**Timeline Realistis:** Tahun, bukan bulan. Ini community-driven.
 
 ---
 
-## 📄 License & Warranty
+## 📄 License & Garansi
 
-**License:** MIT (Open source, do whatever you want)  
-**Warranty:** NONE (DIY = at your own risk)  
-**Liability:** You are responsible for your build and tuning  
-**Safety:** Improper timing can damage engines - tune carefully
+**License:** MIT (Open source, terserah mau diapain)  
+**Garansi:** GA ADA (DIY = at your own risk)  
+**Liability:** Lo yang tanggung jawab build dan tuning lo  
+**Safety:** Timing yang salah bisa rusak mesin - tuning hati-hati
 
-**No guarantees, no refunds, no support hotline.**  
-**But also: No vendor lock-in, no proprietary software, full control.**
+**Ga ada jaminan, ga ada refund, ga ada support hotline.**  
+**Tapi juga: Ga ada vendor lock-in, ga ada proprietary software, full control.**
 
 ---
 
-## 🏆 Summary
+## 🏆 Ringkasan
 
-### **Strengths:**
+### **Kelebihan:**
 
-1. ⭐ Exceptional timing accuracy (<0.01°)
-2. ⭐ Comprehensive feature set
-3. ⭐ Excellent value ($20 vs $200-5000)
+1. ⭐ Akurasi timing exceptional (<0.01°)
+2. ⭐ Feature set comprehensive
+3. ⭐ Value excellent (260rb vs 3juta-70juta)
 4. ⭐ Open source & customizable
-5. ⭐ Professional Web UI
+5. ⭐ Web UI profesional
 6. ⭐ Active development
 
-### **Weaknesses:**
+### **Kekurangan:**
 
-1. 🔴 DIY build required
+1. 🔴 Build DIY required
 2. 🔴 Single-cylinder only
-3. 🔴 No official PCB (yet)
-4. 🔴 Community support only
-5. 🔴 Limited dyno validation
-6. 🔴 Not plug-and-play
+3. 🔴 Belum ada PCB official
+4. 🔴 Support komunitas aja
+5. 🔴 Validasi dyno terbatas
+6. 🔴 Bukan plug-and-play
 
 ### **Target Market:**
 
-Racing enthusiasts, tuners, DIY builders with electronics skills who want professional ignition control at DIY prices.
+Racing enthusiasts, tuner, builder DIY dengan skill elektronik yang mau kontrol pengapian profesional dengan harga DIY.
 
 ### **Best Use Case:**
 
-Single-cylinder racing bikes (MX, pit bikes, custom builds) where programmable ignition is valuable and DIY is acceptable.
+Motor balap single-cylinder (MX, pit bike, custom build) di mana pengapian programmable valuable dan DIY acceptable.
 
-### **Not Suitable For:**
+### **Ga Cocok Untuk:**
 
-Beginners, multi-cylinder bikes, street-legal requirements, plug-and-play users.
+Pemula, motor multi-cylinder, persyaratan street-legal, user plug-and-play.
 
 ---
 
-**🏁 Ready to build? Check out the [README.md](README.md) for getting started!**
+**🏁 Siap bikin? Cek [README.md](README.md) untuk mulai!**
 
-**Still unsure? Join the [GitHub Discussions](https://github.com/yourusername/racing-cdi/discussions) and ask questions!**
+**Masih ragu? Join [GitHub Discussions](https://github.com/wicaksuu/racing-cdi/discussions) dan tanya-tanya!**
