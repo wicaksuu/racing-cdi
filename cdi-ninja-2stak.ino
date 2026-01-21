@@ -264,7 +264,7 @@ void initWatchdog(void) {
   IWDG->KR = 0x5555;  // Enable write access to PR, RLR
 
   IWDG->PR = 6;       // Prescaler /256 (safer, slower tick)
-  IWDG->RLR = 500;    // Reload value for ~4s timeout
+  IWDG->RLR = 100;    // Reload value for ~0.8s timeout
 
   // Wait for registers to update with timeout
   uint32_t timeout = 100000;
@@ -4492,7 +4492,7 @@ void setup() {
 
   // Initialize watchdog timer for auto-recovery from hang
   initWatchdog();
-  USB_SERIAL.println(F("Watchdog: 4s timeout"));
+  USB_SERIAL.println(F("Watchdog: Ready"));
 
   // System ready - enable trigger processing
   runtime.configReady = 1;
