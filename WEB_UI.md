@@ -1,6 +1,5 @@
 # 🌐 Racing CDI - Web UI Documentation
 
-![Web UI Screenshot](ui/img/1.png)
 ![Web UI Screenshot](ui/img/2.png)
 
 **Professional web-based control panel for Racing CDI with real-time telemetry, configuration, and tuning.**
