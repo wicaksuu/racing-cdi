@@ -597,7 +597,7 @@ This project is licensed under the **MIT License** - see [LICENSE](LICENSE) file
 - 📖 [Documentation](docs/)
 - 💬 [Discussions](https://github.com/wicaksuu/racing-cdi/discussions)
 - 🐛 [Issue Tracker](https://github.com/wicaksuu/racing-cdi/issues)
-- 📧 Email: your.email@example.com
+- 📧 Email: ig@wicak.id
 
 **Stay Updated:**
 
@@ -658,7 +658,7 @@ This project is licensed under the **MIT License** - see [LICENSE](LICENSE) file
 
 ## 🏆 Credits
 
-**Author:** Your Name (@wicaksuu)  
+**Author:** Wicaksu (@wicaksuu)  
 **Version:** 1.0.0  
 **Last Updated:** January 2026  
 **Status:** ✅ Production Ready
