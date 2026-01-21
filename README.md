@@ -224,7 +224,7 @@ http://localhost:8080
 - 📁 File manager (browse SD card)
 - 💻 Serial console (send commands)
 
-**See [WEB_UI.md](webui/WEB_UI.md) for complete documentation.**
+**See [WEB_UI.md](WEB_UI.md) for complete documentation.**
 
 ---
 
