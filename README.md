@@ -11,6 +11,14 @@
 
 ---
 
+![Web UI Screenshot](ui/img/1.png)
+
+![Web UI Screenshot](ui/img/2.png)
+
+![Web UI Screenshot](ui/img/3.png)
+
+![Web UI Screenshot](ui/img/4.png)
+
 ## 🎯 Key Features
 
 ### ⚡ Performance

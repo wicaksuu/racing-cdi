@@ -1,6 +1,7 @@
 # 🌐 Racing CDI - Web UI Documentation
 
-![Web UI Screenshot](docs/screenshots/webui-dashboard.png)
+![Web UI Screenshot](ui/img/1.png)
+![Web UI Screenshot](ui/img/2.png)
 
 **Professional web-based control panel for Racing CDI with real-time telemetry, configuration, and tuning.**
 
@@ -9,6 +10,8 @@
 ## 🎯 Features Overview
 
 ### 📊 Real-Time Dashboard
+
+![Web UI Screenshot](ui/img/1.png)
 
 - **Live Telemetry** - 20Hz update rate (50ms refresh)
 - **RPM Gauge** - Large center display with color-coded bar (0-20,000 RPM)
@@ -20,6 +23,8 @@
 
 ### ⚙️ Configuration Panel
 
+![Web UI Screenshot](ui/img/3.png)
+
 - **Map Selection** - Switch between 6 ignition maps
 - **Engine Type** - 2-stroke / 4-stroke mode
 - **Quick Shifter** - Enable/disable and calibrate
@@ -29,6 +34,8 @@
 - **Safety Settings** - Overheat, low battery, over-rev warnings
 
 ### 🔧 Tuning Tools
+
+![Web UI Screenshot](ui/img/2.png)
 
 - **Ignition Map Editor** - Visual 81-point curve editor
 - **Quick Shifter Map** - 21-point cut time adjustment
@@ -47,6 +54,8 @@
 - **Precision Metrics** - Phase correction, timing accuracy
 
 ### 📁 File Management
+
+![Web UI Screenshot](ui/img/4.png)
 
 - **SD Card Browser** - View, download, delete files
 - **Log Viewer** - Analyze CSV data logs
