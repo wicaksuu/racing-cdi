@@ -1,0 +1,36 @@
+menggunakan board dari weact studio STM32H562RGT6
+compail dan build menggunakan arduino
+di larang menggunakan sub folder
+
+suport sd untuk loging pin out sudah ada di pdf
+komunikasi pakai usb type c pin juga sudah ada di pdf -> bisa di gunakan untuk update firmware, realtime data, dan untuk configurasi
+
+triger signal pakai vr conditioner max 9926 dengan 1 tonjolan dan bisa custom pickup anggle perlu di ketahui panjang tonjolan juga bervariasi saya harap kamu perhatikan ini -> harus powerfull untuk racing use only
+HEAD COLAND TEMPERATURE menggunakan ADC dan bisa di kalibrasi
+baca voltase dan kapasitas batre via ADC
+baca regulator chargig batre via ADC
+
+out ignition type CDI -> harus powerfull untuk racing use only
+
+pastikan ga ada pre ignition
+
+semua kodingan harus standart produksi mesin kelas balap dengan handling eror yang baik dan tingkat presisi tinggi
+
+semua setup harus tersimpan di sd pada folder racing-cdi, jika folder belum ada akan buat dulu
+
+maping ignition dapat di edit secara realtime (hot)
+
+terdapat 6 variasi maping tiap maping punya step per 250 rpm dan rpm nya dari 0-20000
+
+terdapat dan dapat di set soft limiter di rpm berapa medium di rpm berapa hard di rpm berapa dan full cut di rpm berapa
+
+dapat di seting untuk 2 atau 4 tak 
+
+
+biar presisi tinggi jangan ragu untuk menggunakan resource penuh dari mcu
+
+pastikan anda melakukan pengecekan pin dan skema dasar MCU gua udah ada di pdf
+
+saya ingin semua nya dapat di custom dengan baik
+
+compail step per step agar kodingan baik 
