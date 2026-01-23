@@ -46,7 +46,8 @@ current_data = {
     'battRaw': 0,       # Battery ADC raw (0-4095)
     'chrgRaw': 0,       # Charging ADC raw (0-4095)
     'dRpm': 0,          # RPM change per cycle (+ = accel, - = decel)
-    'phaseCorr': 0      # Phase correction in ticks (±50 max)
+    'phaseCorr': 0,     # Phase correction in ticks (±50 max)
+    'predictiveMode': False  # Predictive ignition active (timing > trigger angle)
 }
 
 def list_serial_ports():
@@ -62,7 +63,7 @@ def list_serial_ports():
     return result
 
 def parse_rt_data(line):
-    """Parse RT:rpm,timing,temp,batt,charging,map,lim,flags,peak,cpu,ram,trig,cut,engType,cfgSrc,qsAdc,tempRaw,battRaw,chrgRaw,dRpm,phase"""
+    """Parse RT:rpm,timing,temp,batt,charging,map,lim,flags,peak,cpu,ram,trig,cut,engType,cfgSrc,qsAdc,tempRaw,battRaw,chrgRaw,dRpm,phase,pred"""
     global current_data
     try:
         if line.startswith('RT:'):
@@ -84,6 +85,7 @@ def parse_rt_data(line):
                 current_data['usingDefaultMap'] = bool(flags & 0x10)
                 current_data['ignitionEnabled'] = bool(flags & 0x20)
                 current_data['sdCardOk'] = bool(flags & 0x40)
+                current_data['predictiveMode'] = bool(flags & 0x80)  # Predictive ignition
                 current_data['peak'] = int(parts[8])
                 current_data['cpu'] = int(parts[9])   # CPU usage %
                 current_data['ram'] = int(parts[10])  # RAM usage %

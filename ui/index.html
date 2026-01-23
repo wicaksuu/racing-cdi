@@ -281,7 +281,7 @@
 
       .dashboard-gauges {
         display: grid;
-        grid-template-columns: repeat(6, 1fr);
+        grid-template-columns: repeat(7, 1fr);
         gap: 8px;
         margin-bottom: 15px;
       }
@@ -453,15 +453,27 @@
       }
 
       /* Responsive Dashboard */
+      @media (max-width: 1100px) {
+        .dashboard-gauges {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+
       @media (max-width: 900px) {
         .dashboard-main {
           grid-template-columns: 1fr;
         }
         .dashboard-gauges {
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(4, 1fr);
         }
         .dashboard-controls {
           grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 600px) {
+        .dashboard-gauges {
+          grid-template-columns: repeat(3, 1fr);
         }
       }
 
@@ -1724,6 +1736,11 @@
           <div class="gauge-label">Phase</div>
           <div class="gauge-value" id="phaseCorrValue">0</div>
           <div class="gauge-unit">ticks</div>
+        </div>
+        <div class="gauge-card" id="predictiveCard">
+          <div class="gauge-label">Ignition</div>
+          <div class="gauge-value" id="predictiveValue" style="font-size: 1.2em">NORMAL</div>
+          <div class="gauge-unit" id="predictiveUnit">same-cycle</div>
         </div>
       </div>
 
@@ -3107,6 +3124,27 @@
           phaseCorrEl.textContent = (phaseCorr > 0 ? "+" : "") + phaseCorr;
           // Color: cyan when correcting, white when stable
           phaseCorrEl.style.color = Math.abs(phaseCorr) > 10 ? "#00d4ff" : "#fff";
+        }
+
+        // Predictive Ignition Mode - next-cycle firing when timing > trigger angle
+        const predictive = data.predictiveMode || false;
+        const predictiveValueEl = document.getElementById("predictiveValue");
+        const predictiveUnitEl = document.getElementById("predictiveUnit");
+        const predictiveCardEl = document.getElementById("predictiveCard");
+        if (predictiveValueEl && predictiveUnitEl && predictiveCardEl) {
+          if (predictive) {
+            predictiveValueEl.textContent = "PREDICTIVE";
+            predictiveUnitEl.textContent = "next-cycle";
+            predictiveValueEl.style.color = "#ff9500";
+            predictiveCardEl.style.background = "rgba(255, 149, 0, 0.15)";
+            predictiveCardEl.style.borderColor = "#ff9500";
+          } else {
+            predictiveValueEl.textContent = "NORMAL";
+            predictiveUnitEl.textContent = "same-cycle";
+            predictiveValueEl.style.color = "#00ff88";
+            predictiveCardEl.style.background = "";
+            predictiveCardEl.style.borderColor = "";
+          }
         }
 
         // Map

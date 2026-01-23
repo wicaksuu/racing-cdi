@@ -542,6 +542,7 @@ struct __attribute__((aligned(4))) RuntimeData {
   volatile uint8_t killActive;            // Kill switch active
   volatile uint8_t limiterStage;          // Current limiter stage
   volatile uint8_t limiterCounter;        // Counter for pattern-based cut
+  volatile uint8_t predictiveMode;        // 1 = predictive mode (timing > trigger angle)
 
   // === PRE-CALCULATED PERIOD THRESHOLDS (avoids division in ISR) ===
   // Period = 600,000,000 / RPM, so lower period = higher RPM
@@ -654,7 +655,7 @@ static RuntimeData runtime __attribute__((aligned(4)));
 
 // Timer pointers
 static TIM_TypeDef* TIM_CAPTURE = TIM2;   // 32-bit timer for input capture
-static TIM_TypeDef* TIM_IGNITION = TIM3;  // Timer for ignition delay
+static TIM_TypeDef* TIM_IGNITION = TIM5;  // Timer for ignition delay (32-bit for predictive mode)
 static TIM_TypeDef* TIM_PULSE = TIM4;     // Timer for CDI pulse width (replaces NOP loop)
 
 // Fast random for rev limiter (Linear Congruential Generator)
@@ -1517,30 +1518,93 @@ void vrCaptureCallback(void) {
   uint32_t capture = TIM_CAPTURE->CCR1;
 
   // =========================================================================
-  // BLIND WINDOW - Ignore captures shortly after ignition (EMI filter)
-  // Window is RPM-aware: 2.5% of period, min 500 ticks (50µs), max 3000 ticks (300µs)
+  // ADAPTIVE BLIND WINDOW - Mode & RPM aware EMI filter
+  // Scales with RPM to ensure blind window < gap before next trigger
+  // PREDICTIVE MODE: ~0.1% of period (gap is small: timing - trigger degrees)
+  // NORMAL MODE: ~3% of period (gap is ~360°, plenty of margin)
   // =========================================================================
   if (runtime.lastIgnitionTick > 0) {
     uint32_t ticksSinceIgnition = capture - runtime.lastIgnitionTick;
-    // Calculate blind window: ~2.5% of last period = period/40 ≈ period>>5 - period>>7
-    // Simplified: period >> 5 = 3.125%
-    uint32_t blindTicks = runtime.period >> 5;
-    // Clamp: min 500 ticks (50µs @ 10MHz), max 3000 ticks (300µs)
-    if (blindTicks < 500) blindTicks = 500;
-    if (blindTicks > 3000) blindTicks = 3000;
+    uint32_t blindTicks;
+
+    if (runtime.predictiveMode) {
+      // =====================================================================
+      // PREDICTIVE MODE: Adaptive blind window based on expected gap
+      //
+      // Gap = (timing - trigger) degrees = time before next valid trigger
+      // Blind window must be < gap to avoid filtering valid triggers
+      //
+      // Strategy: Look up EXPECTED timing from map based on current RPM
+      // This is more reliable than using previous cycle's timing
+      // =====================================================================
+
+      // Estimate RPM index from period (same method as main timing calc)
+      uint8_t rpmIdx = periodToIndex(runtime.period);
+
+      // Look up expected timing from active map
+      int8_t mapTiming = config.timingMaps[config.activeMap][rpmIdx];
+      int32_t expectedTimingScaled = (int32_t)mapTiming * DEG_SCALE;
+
+      // Calculate expected gap: timing - trigger angle
+      int32_t gapScaled = expectedTimingScaled - config.trigger.triggerAngleScaled;
+
+      if (gapScaled >= 100) {  // At least 1° gap (100 = 1.00°)
+        // gap_ticks = gapScaled * period / 36000
+        uint32_t gapTicks = ((uint64_t)gapScaled * runtime.period) / 36000UL;
+
+        // Blind window = 10% of gap (conservative, leaves 90% margin)
+        blindTicks = gapTicks / 10;
+
+        // Clamp to safe range
+        if (blindTicks < 30) blindTicks = 30;     // min 3µs @ 10MHz
+        if (blindTicks > 500) blindTicks = 500;   // max 50µs @ 10MHz
+      } else {
+        // Very small or zero gap - timing ≈ trigger angle
+        // Use minimal blind window
+        blindTicks = 30;  // 3µs @ 10MHz
+      }
+    } else {
+      // NORMAL MODE: Larger RPM-scaled blind window
+      // Gap is ~360° (full rotation), plenty of margin
+      // Formula: ~3% of period, min 50µs, max 300µs
+      blindTicks = runtime.period >> 5;
+      if (blindTicks < 500) blindTicks = 500;    // min 50µs @ 10MHz
+      if (blindTicks > 3000) blindTicks = 3000;  // max 300µs @ 10MHz
+    }
 
     if (ticksSinceIgnition < blindTicks) {
-      return;  // Still in blind window, ignore this trigger (likely EMI)
+      return;
     }
   }
 
   uint32_t period = capture - runtime.lastCapture;
-  runtime.lastCapture = capture;
 
-  // Noise filter - reject too short pulses
+  // Noise filter - reject too short pulses (don't update lastCapture)
   if (period < config.trigger.noiseFilterTicks) {
     return;
   }
+
+  // =========================================================================
+  // PERIOD VALIDATION FILTER - Reject impossible RPM changes
+  // RPM cannot change by more than 50% in a single cycle (physical limit)
+  // This filters EMI that causes false triggers (e.g., 5000 RPM → 20000 RPM)
+  // Only update lastCapture AFTER validation passes
+  // =========================================================================
+  if (runtime.period > 0 && runtime.engineRunning) {
+    // Check if period changed too drastically
+    // Allow 50% faster (period * 0.5) to 200% slower (period * 2)
+    uint32_t minPeriod = runtime.period >> 1;        // 50% of previous (2x RPM)
+    uint32_t maxPeriod = runtime.period << 1;        // 200% of previous (0.5x RPM)
+
+    if (period < minPeriod || period > maxPeriod) {
+      // Impossible RPM change - likely noise/EMI
+      // DON'T update lastCapture - next trigger will measure from last valid
+      return;
+    }
+  }
+
+  // Validation passed - now update lastCapture
+  runtime.lastCapture = capture;
 
   // Store period and mark engine running
   // Note: Don't call millis() here - it requires SysTick which we don't want to block
@@ -1728,50 +1792,77 @@ void vrCaptureCallback(void) {
   // Delay = (triggerAngle - timing) degrees
   int32_t angleDelayScaled = config.trigger.triggerAngleScaled - timingScaled;
 
-  if (angleDelayScaled <= 0) {
-    // Fire immediately - timing more advanced than pickup
-    fireCdiWithTimer();  // Non-blocking pulse using TIM4
-  } else {
-    // RACE CONDITION FIX: Skip if previous ignition still pending
-    // This prevents timer register corruption when triggers come faster than expected
-    if (runtime.ignitionPending) {
-      return;  // Previous ignition not yet fired, skip this trigger
+  // RACE CONDITION FIX: Skip if previous ignition still pending
+  if (runtime.ignitionPending) {
+    return;
+  }
+
+  uint32_t ticksPerDeg = ticksPerDegTable[rpmIndex];
+  uint32_t delayTicks;
+
+  if (angleDelayScaled < 0) {
+    // =====================================================================
+    // PREDICTIVE MODE: Timing more advanced than trigger angle
+    // Fire on NEXT cycle: delay = 360° - (timing - triggerAngle)
+    // Example: trigger=8°, timing=15° → delay = 360° - 7° = 353°
+    // =====================================================================
+    runtime.predictiveMode = 1;
+
+    // Calculate angle to next-cycle firing point
+    // predictiveAngle = 360° + angleDelayScaled (angleDelayScaled is negative)
+    // In scaled units: 36000 + angleDelayScaled
+    int32_t predictiveAngleScaled = 36000 + angleDelayScaled;
+
+    // Convert to ticks
+    delayTicks = ((uint64_t)predictiveAngleScaled * ticksPerDeg) / 10000UL;
+
+    // Apply phase correction
+    int32_t correctedDelay = (int32_t)delayTicks + runtime.phaseCorrectionUs;
+    if (correctedDelay < (int32_t)(period / 2)) {
+      correctedDelay = period / 2;  // Minimum: fire after half rotation
+    }
+    delayTicks = (uint32_t)correctedDelay;
+
+    // Sanity check: max delay is ~1.5 periods (540° for safety)
+    uint32_t maxDelay = period + (period >> 1);
+    if (delayTicks > maxDelay) {
+      delayTicks = maxDelay;
     }
 
-    // Schedule delayed ignition using TIM3
-    // rpmIndex already calculated above from periodToIndex()
-    uint32_t ticksPerDeg = ticksPerDegTable[rpmIndex];
+  } else {
+    // =====================================================================
+    // NORMAL MODE: Timing within trigger angle range
+    // Standard same-cycle firing
+    // =====================================================================
+    runtime.predictiveMode = 0;
 
-    // delayTicks = angleDelayScaled * ticksPerDeg / (DEG_SCALE * DEG_SCALE)
-    // Optimized: division by 10000 can be done as multiply + shift
-    // delayTicks = (angleDelayScaled * ticksPerDeg) / 10000
-    // Using 64-bit intermediate to prevent overflow
-    uint32_t delayTicks = ((uint64_t)angleDelayScaled * ticksPerDeg) / 10000UL;
+    // Convert angle to ticks
+    delayTicks = ((uint64_t)angleDelayScaled * ticksPerDeg) / 10000UL;
 
-    // Apply per-cycle phase correction (from previous cycle's error)
-    // This locks ignition to actual crank position, not estimated
+    // Apply phase correction
     int32_t correctedDelay = (int32_t)delayTicks + runtime.phaseCorrectionUs;
     if (correctedDelay < 0) correctedDelay = 0;
     delayTicks = (uint32_t)correctedDelay;
 
-    // Sanity check - max delay is half the period
+    // Sanity check - max delay is half the period (normal mode)
     if (delayTicks > period / 2) {
       delayTicks = 0;
     }
+  }
 
-    if (delayTicks < 100) {
-      // Very short delay, fire immediately
-      fireCdiWithTimer();  // Non-blocking pulse using TIM4
-    } else {
-      // Setup TIM3 for one-shot delay using direct register access
-      TIM_IGNITION->CR1 = 0;                    // Stop timer
-      TIM_IGNITION->CNT = 0;                    // Reset counter
-      TIM_IGNITION->ARR = delayTicks;           // Set delay
-      TIM_IGNITION->SR = 0;                     // Clear flags
-      TIM_IGNITION->DIER = TIM_DIER_UIE;        // Enable update interrupt
-      TIM_IGNITION->CR1 = TIM_CR1_CEN | TIM_CR1_OPM;  // Start one-pulse mode
-      runtime.ignitionPending = 1;
-    }
+  // Fire ignition
+  if (delayTicks < 100) {
+    // Very short delay, fire immediately
+    fireCdiWithTimer();
+  } else {
+    // Setup TIM5 (32-bit) for one-shot delay
+    TIM_IGNITION->CR1 = 0;                    // Stop timer
+    TIM_IGNITION->CNT = 0;                    // Reset counter
+    TIM_IGNITION->ARR = delayTicks;           // Set delay (32-bit capable)
+    TIM_IGNITION->SR = 0;                     // Clear flags
+    TIM_IGNITION->DIER = TIM_DIER_UIE;        // Enable update interrupt
+    TIM_IGNITION->CR1 = TIM_CR1_CEN | TIM_CR1_OPM;  // Start one-pulse mode
+    runtime.ignitionPending = 1;
   }
 }
 
@@ -1832,9 +1923,9 @@ void setupTimers(void) {
   TimerCapture->resume();
 
   // === TIM3: Ignition delay timing ===
-  TimerIgnition = new HardwareTimer(TIM3);
+  TimerIgnition = new HardwareTimer(TIM5);
   TimerIgnition->setPrescaleFactor(actualPrescaler);  // Same prescaler as TIM2
-  TimerIgnition->setOverflow(0xFFFF);
+  TimerIgnition->setOverflow(0xFFFFFFFF);  // 32-bit for large delays in predictive mode
 
   // Attach callback
   TimerIgnition->attachInterrupt(ignitionFireCallback);
@@ -4078,6 +4169,7 @@ void sendRealtimeData(void) {
   if (runtime.usingDefaultMap) flags |= 0x10;
   if (runtime.ignitionEnabled) flags |= 0x20;
   if (runtime.sdCardOk) flags |= 0x40;
+  if (runtime.predictiveMode) flags |= 0x80;
 
   // Build entire string in buffer (single write = less blocking)
   int len = snprintf(rtBuffer, sizeof(rtBuffer),
@@ -4172,8 +4264,7 @@ static uint32_t logWriteCount = 0;
 // Check if SD card is physically present using detect pin
 // Returns: 1 = card present, 0 = card removed
 static inline uint8_t isSDCardPresent(void) {
-  // SD_DETECT pin is HIGH when card is inserted (active high)
-  // Note: Some SD sockets are active low - change HIGH to LOW if needed
+  // SD_DETECT pin is HIGH when card is inserted (directly connected in socket)
   return (digitalRead(PIN_SD_DETECT) == HIGH) ? 1 : 0;
 }
 
@@ -4472,7 +4563,7 @@ void setup() {
   // 3: TIM2 - VR capture (can be preempted by ignition)
   //
   NVIC_SetPriority(SysTick_IRQn, 0);           // millis() - highest
-  HAL_NVIC_SetPriority(TIM3_IRQn, 1, 0);       // Ignition fire - CRITICAL
+  HAL_NVIC_SetPriority(TIM5_IRQn, 1, 0);       // Ignition fire - CRITICAL (32-bit)
   HAL_NVIC_SetPriority(TIM4_IRQn, 2, 0);       // CDI pulse end
   HAL_NVIC_SetPriority(TIM2_IRQn, 3, 0);       // VR capture - can wait
 
