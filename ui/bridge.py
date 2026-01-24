@@ -47,7 +47,9 @@ current_data = {
     'chrgRaw': 0,       # Charging ADC raw (0-4095)
     'dRpm': 0,          # RPM change per cycle (+ = accel, - = decel)
     'phaseCorr': 0,     # Phase correction in ticks (±50 max)
-    'predictiveMode': False  # Predictive ignition active (timing > trigger angle)
+    'predictiveMode': False,  # Predictive ignition active (timing > trigger angle)
+    'timingClamped': False,   # Timing was clamped to min/max
+    'skippedTriggers': 0      # Race condition skip counter (diagnostic)
 }
 
 def list_serial_ports():
@@ -63,7 +65,7 @@ def list_serial_ports():
     return result
 
 def parse_rt_data(line):
-    """Parse RT:rpm,timing,temp,batt,charging,map,lim,flags,peak,cpu,ram,trig,cut,engType,cfgSrc,qsAdc,tempRaw,battRaw,chrgRaw,dRpm,phase,pred"""
+    """Parse RT:rpm,timing,temp,batt,charging,map,lim,flags,peak,cpu,ram,trig,cut,engType,cfgSrc,qsAdc,tempRaw,battRaw,chrgRaw,dRpm,phase,flags2,skip"""
     global current_data
     try:
         if line.startswith('RT:'):
@@ -109,6 +111,11 @@ def parse_rt_data(line):
                 if len(parts) >= 21:
                     current_data['dRpm'] = int(parts[19])       # RPM change per cycle
                     current_data['phaseCorr'] = int(parts[20])  # Phase correction ticks
+                # Extended flags and diagnostics (Expert Review fixes)
+                if len(parts) >= 23:
+                    flags2 = int(parts[21])
+                    current_data['timingClamped'] = bool(flags2 & 0x01)
+                    current_data['skippedTriggers'] = int(parts[22])
                 return True
     except:
         pass

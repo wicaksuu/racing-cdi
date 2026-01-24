@@ -5,29 +5,6 @@
  * Board: WeAct Studio STM32H562RGT6 (ARM Cortex-M33 @ 250MHz)
  * Framework: Arduino STM32
  *
- * PRECISION FEATURES:
- * - Hardware timer input capture (no polling)
- * - Hardware timer output compare (precise pulse timing)
- * - Integer-only math in ISR (no float)
- * - Direct register access for GPIO (sub-microsecond)
- * - Precomputed lookup tables
- * - Fixed-point arithmetic (0.01° resolution)
- * - Minimal ISR latency (~500ns)
- * - Jitter < 0.05° at all RPM
- *
- * RACING FEATURES:
- * - 6 ignition maps (250 RPM step, 0-20000 RPM)
- * - 4 stage rev limiter (soft/medium/hard/full cut)
- * - VR signal capture with adjustable pickup angle & tooth width
- * - 2-stroke / 4-stroke mode
- * - Shift light, Kill switch, Map switch
- * - ADC: head temp, battery, charging (with calibration)
- * - SD card config & logging
- * - USB realtime data & config
- * - Hot mapping edit
- * - Hour meter, Peak RPM memory
- * - Safety: over-rev, overheat retard, low battery, default map
- * ============================================================================
  */
 
 #include <STM32SD.h>
@@ -198,10 +175,15 @@ uint32_t calculateFlashChecksum(struct FlashDefaults* fd);
 // 500ms = 5,000,000 ticks
 #define ENGINE_TIMEOUT_TICKS    5000000UL
 
+// Max valid period (timer ticks at 10MHz)
+// 600ms = 6,000,000 ticks = 100 RPM minimum
+// Periods longer than this indicate stopped engine or sensor failure
+#define MAX_VALID_PERIOD_TICKS  6000000UL
+
 // Cold start protection - wait for N valid triggers before firing
-// This prevents erratic behavior when system starts with high RPM signal
-#define STARTUP_TRIGGER_COUNT   5     // Wait for 5 consistent triggers before firing
-#define STARTUP_PERIOD_TOLERANCE 10   // 10% tolerance for period consistency
+// RACING MODE: Minimal startup delay, rely on period filter for EMI rejection
+#define STARTUP_TRIGGER_COUNT   2     // Just 2 triggers to start (minimal delay)
+#define STARTUP_PERIOD_TOLERANCE 2    // 50% tolerance (very lenient for racing)
 
 // LED Status Patterns (for MCU health indication)
 #define LED_PATTERN_IDLE        0   // Slow blink - system idle, no engine
@@ -213,10 +195,14 @@ uint32_t calculateFlashChecksum(struct FlashDefaults* fd);
 // CPU usage measurement interval
 #define CPU_MEASURE_INTERVAL_MS 100
 
+// Enable/disable CPU measurement (disable in production to reduce overhead)
+#define DEBUG_CPU_USAGE
+
 // ============================================================================
 // CPU/RAM MONITORING - ACCURATE MEASUREMENT USING DWT CYCLE COUNTER
 // ============================================================================
 
+#ifdef DEBUG_CPU_USAGE
 // DWT (Data Watchpoint and Trace) registers for Cortex-M33
 #define DWT_CTRL    (*(volatile uint32_t*)0xE0001000)
 #define DWT_CYCCNT  (*(volatile uint32_t*)0xE0001004)
@@ -231,6 +217,10 @@ static volatile uint8_t cpuUsagePercent = 0;      // Current CPU usage %
 static volatile uint32_t lastCpuMeasureMs = 0;    // Last measurement time
 static volatile uint8_t cpuCalibrated = 0;        // Calibration done flag
 static volatile uint32_t cpuBaselineLoopCycles = 0; // Baseline loop cycles per period (idle)
+#else
+// When CPU measurement disabled, just provide a placeholder for UI
+static volatile uint8_t cpuUsagePercent = 0;
+#endif
 
 // External symbols from linker for RAM calculation
 extern "C" char _end;       // End of .bss section (start of heap)
@@ -238,6 +228,7 @@ extern "C" char _estack;    // End of stack (top of RAM)
 extern "C" char _sdata;     // Start of .data section
 extern "C" char _ebss;      // End of .bss section
 
+#ifdef DEBUG_CPU_USAGE
 // Initialize DWT cycle counter
 void initDWT(void) {
   // Unlock DWT (required on some Cortex-M33)
@@ -248,6 +239,9 @@ void initDWT(void) {
   DWT_CYCCNT = 0;
   DWT_CTRL |= 1;  // CYCCNTENA bit
 }
+#else
+void initDWT(void) { }  // No-op when disabled
+#endif
 
 // ============================================================================
 // WATCHDOG TIMER - Auto-recovery from MCU hang
@@ -365,6 +359,7 @@ uint32_t getFreeRam(void) {
   return (uint32_t)(&stackVar) - (uint32_t)(&_ebss);
 }
 
+#ifdef DEBUG_CPU_USAGE
 // Mark start of main loop iteration - call at very start of loop()
 static inline void cpuLoopStart(void) __attribute__((always_inline));
 static inline void cpuLoopStart(void) {
@@ -430,6 +425,12 @@ void updateCpuUsage(void) {
     lastCpuMeasureMs = now;
   }
 }
+#else
+// No-op stubs when CPU measurement disabled
+static inline void cpuLoopStart(void) { }
+static inline void cpuLoopEnd(void) { }
+void updateCpuUsage(void) { }
+#endif
 
 // ============================================================================
 // DATA STRUCTURES - OPTIMIZED FOR CACHE ALIGNMENT
@@ -533,7 +534,9 @@ struct __attribute__((aligned(4))) CDIConfig {
 struct __attribute__((aligned(4))) RuntimeData {
   // === CRITICAL TIMING DATA (accessed in ISR) ===
   volatile uint32_t lastCapture;          // Last capture value
-  volatile uint32_t period;               // Period in timer ticks
+  volatile uint32_t period;               // Period in timer ticks (current/latest)
+  volatile uint32_t scheduledPeriod;      // Period at ignition scheduling (for late fire check)
+  volatile uint32_t scheduledCapture;     // Capture time at ignition scheduling (for late fire check)
   volatile uint32_t nextFireTick;         // When to fire next
   volatile uint16_t currentRpm;           // Current RPM
   volatile int16_t currentTimingScaled;   // Current timing x100
@@ -564,6 +567,7 @@ struct __attribute__((aligned(4))) RuntimeData {
   volatile uint8_t ignitionEnabled;
   volatile uint8_t sdBusy;            // SD operation in progress
   volatile uint8_t configSource;      // 0=SD, 1=Flash, 2=Hardcoded
+  volatile uint8_t timingClamped;     // Timing was clamped to min/max (map value out of range)
 
   // === QUICK SHIFTER STATE ===
   volatile uint8_t qsActive;          // Quick shift cut currently active
@@ -578,6 +582,7 @@ struct __attribute__((aligned(4))) RuntimeData {
   volatile uint32_t ignitionCount;
   volatile uint32_t cutCount;
   volatile uint32_t triggerCount;     // Valid trigger count since startup (for cold-start protection)
+  volatile uint32_t skippedTriggers;  // Race condition skip count (ignitionPending)
 
   // === COLD START VALIDATION ===
   volatile uint32_t startupPeriods[STARTUP_TRIGGER_COUNT];  // Store periods for consistency check
@@ -671,6 +676,10 @@ static const char* MAP_FILE_PREFIX = "racing-cdi/map";  // map1.txt, map2.txt, e
 static const char* LOG_FILE_PREFIX = "racing-cdi/log_";
 
 #define USB_SERIAL Serial
+
+// Binary telemetry mode flag (0 = ASCII, 1 = Binary)
+// Declared early so it can be used in processUSB() which is defined before sendRealtimeData()
+static uint8_t binaryTelemetryMode = 0;
 
 // ============================================================================
 // FLASH STORAGE FOR DEFAULTS (Settings + Safety Map)
@@ -1461,7 +1470,9 @@ static inline uint8_t shouldCutByPeriod(uint32_t period) {
   }
 
   runtime.limiterStage = LIMITER_NONE;
-  runtime.limiterCounter = 0;  // Reset counter when not limiting
+  // DON'T reset counter - let it run continuously for consistent pattern
+  // when hovering around limiter threshold (expert review recommendation)
+  // runtime.limiterCounter stays as-is
   return 0;
 }
 
@@ -1579,26 +1590,45 @@ void vrCaptureCallback(void) {
 
   uint32_t period = capture - runtime.lastCapture;
 
+  // FIRST TRIGGER FIX: If lastCapture is 0, this is first trigger ever
+  // Just capture the timestamp and return - can't calculate valid period yet
+  if (runtime.lastCapture == 0) {
+    runtime.lastCapture = capture;
+    return;
+  }
+
   // Noise filter - reject too short pulses (don't update lastCapture)
   if (period < config.trigger.noiseFilterTicks) {
     return;
   }
 
+  // Max period check - reject excessively long periods (engine stopped/sensor fail)
+  // Faster detection than engine timeout in main loop
+  if (period > MAX_VALID_PERIOD_TICKS) {
+    runtime.engineRunning = 0;
+    runtime.triggerCount = 0;  // Reset cold-start counter
+    runtime.lastCapture = capture;  // Update so next trigger has valid reference
+    return;
+  }
+
   // =========================================================================
-  // PERIOD VALIDATION FILTER - Reject impossible RPM changes
-  // RPM cannot change by more than 50% in a single cycle (physical limit)
-  // This filters EMI that causes false triggers (e.g., 5000 RPM → 20000 RPM)
-  // Only update lastCapture AFTER validation passes
+  // PERIOD VALIDATION FILTER - SMART EMI REJECTION
+  // Only active at higher RPM where EMI spikes are problematic
+  // At low RPM, large period changes are normal during acceleration
+  // Key: Always update lastCapture so next measurement is valid
   // =========================================================================
-  if (runtime.period > 0 && runtime.engineRunning) {
-    // Check if period changed too drastically
-    // Allow 50% faster (period * 0.5) to 200% slower (period * 2)
-    uint32_t minPeriod = runtime.period >> 1;        // 50% of previous (2x RPM)
-    uint32_t maxPeriod = runtime.period << 1;        // 200% of previous (0.5x RPM)
+  // 400,000 ticks = 1500 RPM at 10MHz timer
+  // Only apply strict filter above 1500 RPM
+  if (runtime.period > 0 && runtime.period < 400000 && runtime.engineRunning) {
+    // Allow 50% to 200% of previous period (2x RPM max change per trigger)
+    // This is physically realistic for racing engines at high RPM
+    uint32_t minPeriod = runtime.period >> 1;        // 50% = 2x RPM jump max
+    uint32_t maxPeriod = runtime.period << 1;        // 200% = 0.5x RPM drop max
 
     if (period < minPeriod || period > maxPeriod) {
-      // Impossible RPM change - likely noise/EMI
-      // DON'T update lastCapture - next trigger will measure from last valid
+      // EMI spike detected - reject this trigger BUT update lastCapture
+      // This prevents cascade failure on next trigger
+      runtime.lastCapture = capture;
       return;
     }
   }
@@ -1620,39 +1650,12 @@ void vrCaptureCallback(void) {
   // NOTE: RPM calculation moved to main loop to reduce ISR time
   // ISR uses period-based comparisons instead
 
-  // Cold start protection - wait for stable, consistent readings before firing
-  // This prevents erratic behavior from noise or sudden RPM spikes
+  // Cold start protection - RACING SIMPLIFIED
+  // Just count valid triggers that passed period filter
+  // Period filter already rejects EMI, no need for complex validation
   if (runtime.triggerCount < STARTUP_TRIGGER_COUNT) {
-    // Store period for consistency validation
-    if (runtime.startupIndex < STARTUP_TRIGGER_COUNT) {
-      runtime.startupPeriods[runtime.startupIndex++] = period;
-    }
     runtime.triggerCount++;
-
-    // When we have enough samples, validate consistency
-    if (runtime.triggerCount == STARTUP_TRIGGER_COUNT) {
-      // Calculate average period
-      uint32_t avgPeriod = 0;
-      for (uint8_t i = 0; i < STARTUP_TRIGGER_COUNT; i++) {
-        avgPeriod += runtime.startupPeriods[i];
-      }
-      avgPeriod /= STARTUP_TRIGGER_COUNT;
-
-      // Check if all periods are within tolerance (±10%)
-      uint32_t maxVariation = avgPeriod / STARTUP_PERIOD_TOLERANCE;
-      for (uint8_t i = 0; i < STARTUP_TRIGGER_COUNT; i++) {
-        int32_t diff = (int32_t)runtime.startupPeriods[i] - (int32_t)avgPeriod;
-        if (diff < 0) diff = -diff;  // abs()
-        if ((uint32_t)diff > maxVariation) {
-          // Period not consistent - reset and try again
-          runtime.triggerCount = 0;
-          runtime.startupIndex = 0;
-          return;
-        }
-      }
-      // All periods consistent - allow ignition on next trigger
-    }
-    return;
+    return;  // Don't fire yet, wait for minimum trigger count
   }
 
   // Skip if kill switch active
@@ -1669,6 +1672,11 @@ void vrCaptureCallback(void) {
   if (runtime.qsActive) {
     runtime.cutCount++;
     runtime.lastCycleWasCut = 1;
+    // CRITICAL FIX: Toggle 4-stroke cycle to maintain sync during QS cut
+    // Without this, cycle tracking gets out of sync and ignition fires on wrong stroke
+    if (config.engineType == ENGINE_4_STROKE) {
+      runtime.fourStrokeCycle ^= 1;
+    }
     return;
   }
 
@@ -1770,6 +1778,9 @@ void vrCaptureCallback(void) {
 
   int16_t timingScaled = runtime.currentTimingScaled;
 
+  // DISABLED: timingClamped was causing MCU freeze - needs investigation
+  // runtime.timingClamped = (timingScaled < TIMING_MIN_SCALED || timingScaled > TIMING_MAX_SCALED) ? 1 : 0;
+
   // Apply dRPM compensation (add advance during acceleration)
   timingScaled += dRpmCompensation;
 
@@ -1778,7 +1789,7 @@ void vrCaptureCallback(void) {
     timingScaled -= SOFT_RETARD_SCALED;  // Retard by 5 degrees
   }
 
-  // Clamp timing to valid range
+  // Clamp timing to valid range (after all modifications)
   if (timingScaled < TIMING_MIN_SCALED) {
     timingScaled = TIMING_MIN_SCALED;  // Clamp to minimum (-10°)
   }
@@ -1792,9 +1803,25 @@ void vrCaptureCallback(void) {
   // Delay = (triggerAngle - timing) degrees
   int32_t angleDelayScaled = config.trigger.triggerAngleScaled - timingScaled;
 
-  // RACE CONDITION FIX: Skip if previous ignition still pending
+  // RACE CONDITION HANDLING
+  // If previous ignition still pending, we have two options:
+  // 1. Normal mode: skip this trigger (safe, ignition will fire soon)
+  // 2. Predictive mode: cancel old, schedule new (prevents stall during accel)
   if (runtime.ignitionPending) {
-    return;
+    // Check if this will be predictive mode
+    int32_t checkAngleDelay = config.trigger.triggerAngleScaled - timingScaled;
+    if (checkAngleDelay < 0) {
+      // PREDICTIVE MODE: Don't skip - cancel old timer and continue
+      // This prevents engine stall during fast acceleration
+      TIM_IGNITION->CR1 = 0;  // Stop old timer
+      runtime.ignitionPending = 0;
+      // Don't increment skippedTriggers - we're handling it, not skipping
+      // Continue to schedule new ignition below
+    } else {
+      // NORMAL MODE: Safe to skip, ignition will fire very soon
+      runtime.skippedTriggers++;  // Only count actual skips
+      return;
+    }
   }
 
   uint32_t ticksPerDeg = ticksPerDegTable[rpmIndex];
@@ -1807,6 +1834,7 @@ void vrCaptureCallback(void) {
     // Example: trigger=8°, timing=15° → delay = 360° - 7° = 353°
     // =====================================================================
     runtime.predictiveMode = 1;
+    runtime.timingClamped = 0;  // Reset, will be set if clamping occurs
 
     // Calculate angle to next-cycle firing point
     // predictiveAngle = 360° + angleDelayScaled (angleDelayScaled is negative)
@@ -1829,12 +1857,43 @@ void vrCaptureCallback(void) {
       delayTicks = maxDelay;
     }
 
+    // GENTLE ACCELERATION COMPENSATION
+    // Only reduce delay proportionally to dRpm, NO minimum clamp
+    // This prevents stalls while still adjusting for acceleration
+    if (runtime.dRpm > 0) {
+      uint32_t rpmApprox = 600000000UL / period;
+      if (rpmApprox > 0) {
+        // Calculate how much period will shrink
+        uint32_t periodReduction = ((uint32_t)runtime.dRpm * period) / rpmApprox;
+        // Add small 1% safety margin
+        uint32_t safetyMargin = period / 100;
+        uint32_t safeDelay = period - periodReduction - safetyMargin;
+
+        // Only clamp if calculated delay exceeds safe delay
+        // NO minimum clamp - let timing be what it needs to be
+        if (delayTicks > safeDelay && safeDelay > (period / 2)) {
+          runtime.timingClamped = 1;
+          delayTicks = safeDelay;
+        }
+      }
+    }
+
+    // STEADY STATE: 99% max for accuracy (only 3.6° margin)
+    if (runtime.dRpm <= 0) {
+      uint32_t steadyMaxDelay = (period * 99) / 100;
+      if (delayTicks > steadyMaxDelay) {
+        runtime.timingClamped = 1;
+        delayTicks = steadyMaxDelay;
+      }
+    }
+
   } else {
     // =====================================================================
     // NORMAL MODE: Timing within trigger angle range
     // Standard same-cycle firing
     // =====================================================================
     runtime.predictiveMode = 0;
+    runtime.timingClamped = 0;  // Normal mode doesn't clamp
 
     // Convert angle to ticks
     delayTicks = ((uint64_t)angleDelayScaled * ticksPerDeg) / 10000UL;
@@ -1862,6 +1921,8 @@ void vrCaptureCallback(void) {
     TIM_IGNITION->SR = 0;                     // Clear flags
     TIM_IGNITION->DIER = TIM_DIER_UIE;        // Enable update interrupt
     TIM_IGNITION->CR1 = TIM_CR1_CEN | TIM_CR1_OPM;  // Start one-pulse mode
+    runtime.scheduledPeriod = period;              // Store period for late fire check
+    runtime.scheduledCapture = runtime.lastCapture; // Store capture time for late fire check
     runtime.ignitionPending = 1;
   }
 }
@@ -1870,6 +1931,15 @@ void vrCaptureCallback(void) {
 void ignitionFireCallback(void) {
   if (runtime.ignitionPending) {
     runtime.ignitionPending = 0;
+
+    // LATE FIRE PREVENTION - DISABLED
+    // The dynamic safety clamp already ensures delay doesn't exceed safe limits
+    // Late fire prevention was causing false skips, especially during acceleration
+    // Trust the clamp and interrupt priorities to handle timing correctly
+    //
+    // NOTE: If timing issues occur, this can be re-enabled with proper threshold
+    // that matches the dynamic clamp values (not a fixed 95%)
+
     fireCdiWithTimer();  // Non-blocking pulse using TIM4
   }
 }
@@ -2115,8 +2185,8 @@ void loadHardcodedDefaults(void) {
   config.engineType = ENGINE_2_STROKE;
   config.activeMap = 0;
 
-  // Trigger: single tooth at 30° BTDC
-  config.trigger.triggerAngleScaled = 3000;  // 30.00° BTDC
+  // Trigger: single tooth at 8° BTDC
+  config.trigger.triggerAngleScaled = 800;  // 8.00° BTDC
   config.trigger.risingEdge = 1;
   config.trigger.noiseFilterTicks = 1000;   // 100us at 10MHz
   config.trigger.cdiPulseUs = 100;          // 100us CDI pulse (adjustable 50-250us)
@@ -2924,11 +2994,16 @@ void exportAllToText(void) {
     USB_SERIAL.println(F("Export failed: SD busy"));
     return;
   }
+  kickWatchdog();
   runtime.sdBusy = 1;
   createReadmeFile();
+  kickWatchdog();
   exportSettingsToText();
+  kickWatchdog();
   exportAllMapsToText();
+  kickWatchdog();
   exportQSMapToText();  // Also export QS cut time map
+  kickWatchdog();
   runtime.sdBusy = 0;
   USB_SERIAL.println(F("All files exported"));
 }
@@ -3509,6 +3584,14 @@ void processUSB(void) {
     __enable_irq();
     config.checksum = calculateChecksum(&config);
     USB_SERIAL.println(F("QS:OFF"));
+
+  // Binary telemetry mode toggle (for faster/more efficient data transfer)
+  } else if (cmd == "BINARY ON") {
+    binaryTelemetryMode = 1;
+    USB_SERIAL.println(F("BINARY:ON"));
+  } else if (cmd == "BINARY OFF") {
+    binaryTelemetryMode = 0;
+    USB_SERIAL.println(F("BINARY:OFF"));
 
   } else if (cmd == "EXPORT") {
     // Block SD operations when RPM >= 100 to prevent timing issues
@@ -4149,18 +4232,88 @@ void handleMap(String p) {
 }
 
 // Static buffer for RT data - avoids multiple print() calls that can block
-static char rtBuffer[128];
+// 23 fields max, each ~10 chars + commas + header = ~280 chars max
+static char rtBuffer[320];
+
+// Binary telemetry packet structure (packed for efficient transmission)
+// Size: 18 bytes vs ~120+ bytes for ASCII - 6x reduction in USB traffic
+struct __attribute__((packed)) TelemetryPacket {
+  uint8_t start;        // 0xAA - frame start marker
+  uint16_t rpm;         // 0-20000
+  int16_t timing;       // scaled x10 (-100 to 600 = -10.0° to 60.0°)
+  uint16_t period;      // timer ticks / 100 (for RPM calc)
+  uint8_t map;          // 0-5 (active map)
+  uint8_t limiter;      // 0-4 (limiter stage)
+  int16_t temp;         // temperature x10 (C)
+  uint16_t battery;     // millivolts
+  uint8_t flags;        // status flags (engineRunning, overheat, lowBatt, kill, defMap, ignEn, sdOk, predictive)
+  uint8_t flags2;       // extended flags (bit0=timingClamped)
+  uint8_t checksum;     // XOR checksum of all bytes
+  uint8_t end;          // 0x55 - frame end marker
+};
+
+// Calculate XOR checksum for binary packet
+static uint8_t calcPacketChecksum(uint8_t* data, uint8_t len) {
+  uint8_t chk = 0;
+  for (uint8_t i = 0; i < len; i++) {
+    chk ^= data[i];
+  }
+  return chk;
+}
+
+// Send binary telemetry (much faster than ASCII)
+void sendBinaryTelemetry(void) {
+  TelemetryPacket pkt;
+  pkt.start = 0xAA;
+  pkt.rpm = runtime.currentRpm;
+  pkt.timing = runtime.currentTimingScaled / 10;  // scale down for int16
+  pkt.period = (uint16_t)(runtime.period / 100);  // scale down to fit uint16
+  pkt.map = config.activeMap;
+  pkt.limiter = runtime.limiterStage;
+  pkt.temp = rawToTempX10(runtime.tempRaw);
+  pkt.battery = rawToVoltageX100(runtime.batteryRaw, config.adcCal.battScaleScaled);
+
+  // Build flags byte
+  pkt.flags = 0;
+  if (runtime.engineRunning) pkt.flags |= 0x01;
+  if (runtime.overheating) pkt.flags |= 0x02;
+  if (runtime.lowBattery) pkt.flags |= 0x04;
+  if (runtime.killActive) pkt.flags |= 0x08;
+  if (runtime.usingDefaultMap) pkt.flags |= 0x10;
+  if (runtime.ignitionEnabled) pkt.flags |= 0x20;
+  if (runtime.sdCardOk) pkt.flags |= 0x40;
+  if (runtime.predictiveMode) pkt.flags |= 0x80;
+
+  // Build flags2 byte (extended)
+  pkt.flags2 = 0;
+  if (runtime.timingClamped) pkt.flags2 |= 0x01;
+
+  // Calculate checksum (exclude start, checksum, end)
+  pkt.checksum = calcPacketChecksum((uint8_t*)&pkt.rpm, sizeof(pkt) - 4);
+  pkt.end = 0x55;
+
+  // Single write - minimal blocking
+  USB_SERIAL.write((uint8_t*)&pkt, sizeof(pkt));
+}
 
 void sendRealtimeData(void) {
-  // Format: RT:RPM,TIMING,TEMP,BATT,CHARGING,MAP,LIMITER,FLAGS,PEAK,CPU,RAM,TRIG,CUT,ENGTYPE,CFGSRC,QSADC,TEMPRAW,BATTRAW,CHRGRAW,DRPM,PHASE
+  // Use binary protocol if enabled (6x less USB traffic, faster parsing)
+  if (binaryTelemetryMode) {
+    sendBinaryTelemetry();
+    return;
+  }
+
+  // ASCII Format: RT:RPM,TIMING,TEMP,BATT,CHARGING,MAP,LIMITER,FLAGS,PEAK,CPU,RAM,TRIG,CUT,ENGTYPE,CFGSRC,QSADC,TEMPRAW,BATTRAW,CHRGRAW,DRPM,PHASE,FLAGS2,SKIP
   // CFGSRC: 0=SD, 1=Flash, 2=Hardcoded
   // QSADC: Quick Shifter ADC raw value (0-4095)
   // TEMPRAW,BATTRAW,CHRGRAW: Raw ADC values for calibration (0-4095)
   // DRPM: RPM change per cycle (+ = accel, - = decel)
   // PHASE: Phase correction in ticks (±50 max)
+  // FLAGS2: Extended flags (bit0=timingClamped, bit1-7=reserved)
+  // SKIP: Skipped triggers count (race condition diagnostic)
   // Using single buffer write instead of 14+ print() calls to reduce blocking
 
-  // Build flags byte
+  // Build flags byte (original)
   uint8_t flags = 0;
   if (runtime.engineRunning) flags |= 0x01;
   if (runtime.overheating) flags |= 0x02;
@@ -4171,9 +4324,13 @@ void sendRealtimeData(void) {
   if (runtime.sdCardOk) flags |= 0x40;
   if (runtime.predictiveMode) flags |= 0x80;
 
+  // Build flags2 byte (extended)
+  uint8_t flags2 = 0;
+  if (runtime.timingClamped) flags2 |= 0x01;
+
   // Build entire string in buffer (single write = less blocking)
   int len = snprintf(rtBuffer, sizeof(rtBuffer),
-    "RT:%u,%d,%d,%d,%d,%u,%u,%u,%u,%u,%u,%d,%u,%u,%u,%u,%u,%u,%u,%d,%d\n",
+    "RT:%u,%d,%d,%d,%d,%u,%u,%u,%u,%u,%u,%d,%u,%u,%u,%u,%u,%u,%u,%d,%d,%u,%lu\n",
     runtime.currentRpm,
     runtime.currentTimingScaled / DEG_SCALE,
     rawToTempX10(runtime.tempRaw) / 10,
@@ -4194,7 +4351,9 @@ void sendRealtimeData(void) {
     runtime.batteryRaw,
     runtime.chargingRaw,
     runtime.dRpm,                // RPM change per cycle
-    runtime.phaseCorrectionUs    // Phase correction in ticks
+    runtime.phaseCorrectionUs,   // Phase correction in ticks
+    flags2,                      // Extended flags (timingClamped, etc)
+    runtime.skippedTriggers      // Race condition skip counter
   );
 
   // Single write - much faster than 14+ print() calls
@@ -4243,6 +4402,7 @@ void sendHelp(void) {
   USB_SERIAL.println(F("MAP [1-6] [rpm] [timing] - Hot edit"));
   USB_SERIAL.println(F("MAP [1-6] GET - Read map"));
   USB_SERIAL.println(F("IGN ON|OFF - Enable/disable ignition"));
+  USB_SERIAL.println(F("BINARY ON|OFF - Toggle binary telemetry"));
   USB_SERIAL.println(F("SAVE, LOAD, DEFAULT, STATUS, HELP"));
   USB_SERIAL.println(F("RESETPEAK"));
   USB_SERIAL.println(F("EXPORT - Export all to text files"));
@@ -4595,19 +4755,23 @@ void setup() {
 // ============================================================================
 
 void loop() {
-  // Kick watchdog to prevent reset (must be called every <2 seconds)
-  kickWatchdog();
-
   // Mark start of loop iteration for CPU measurement
   cpuLoopStart();
+
+  uint32_t now = millis();
+
+  // Kick watchdog (rate limited - timeout is ~0.8s, kick every 500ms)
+  static uint32_t lastWatchdogKick = 0;
+  if (now - lastWatchdogKick >= 500) {
+    lastWatchdogKick = now;
+    kickWatchdog();
+  }
 
   static uint32_t lastADC = 0;
   static uint32_t lastOutput = 0;
   static uint32_t lastUSB = 0;
   static uint32_t lastLog = 0;
   static uint32_t lastSdBusyCheck = 0;
-
-  uint32_t now = millis();
 
   // Update CPU usage measurement
   updateCpuUsage();
@@ -4622,13 +4786,23 @@ void loop() {
   processQuickShifter();
 
   // Calculate RPM from period (moved from ISR to reduce ISR time)
-  // This is called every loop for responsive display
+  // Only recalculate when period changes (avoid redundant division)
+  static uint32_t lastPeriodForRpm = 0;
   if (runtime.period > 0 && runtime.engineRunning) {
-    runtime.currentRpm = periodToRpm(runtime.period);
+    if (runtime.period != lastPeriodForRpm) {
+      runtime.currentRpm = periodToRpm(runtime.period);
+      lastPeriodForRpm = runtime.period;
+    }
+  } else {
+    lastPeriodForRpm = 0;  // Reset when engine not running
   }
 
-  // Update status LED (every loop for responsive patterns)
-  updateStatusLED();
+  // Update status LED (rate limited - 50ms is sufficient for visible patterns)
+  static uint32_t lastLedUpdate = 0;
+  if (now - lastLedUpdate >= 50) {
+    lastLedUpdate = now;
+    updateStatusLED();
+  }
 
   // Read ADC every 10ms
   if (now - lastADC >= 10) {

@@ -281,7 +281,7 @@
 
       .dashboard-gauges {
         display: grid;
-        grid-template-columns: repeat(7, 1fr);
+        grid-template-columns: repeat(10, 1fr);
         gap: 8px;
         margin-bottom: 15px;
       }
@@ -1739,8 +1739,29 @@
         </div>
         <div class="gauge-card" id="predictiveCard">
           <div class="gauge-label">Ignition</div>
-          <div class="gauge-value" id="predictiveValue" style="font-size: 1.2em">NORMAL</div>
+          <div
+            class="gauge-value"
+            id="predictiveValue"
+            style="font-size: 1.2em"
+          >
+            NORMAL
+          </div>
           <div class="gauge-unit" id="predictiveUnit">same-cycle</div>
+        </div>
+        <div class="gauge-card">
+          <div class="gauge-label">Skipped</div>
+          <div class="gauge-value" id="skippedValue">0</div>
+          <div class="gauge-unit">triggers</div>
+        </div>
+        <div class="gauge-card">
+          <div class="gauge-label">Trigger</div>
+          <div class="gauge-value" id="trigAngleValue">0</div>
+          <div class="gauge-unit">° BTDC</div>
+        </div>
+        <div class="gauge-card" id="marginCard">
+          <div class="gauge-label">Margin</div>
+          <div class="gauge-value" id="marginValue">0</div>
+          <div class="gauge-unit" id="marginUnit">° advance</div>
         </div>
       </div>
 
@@ -1766,6 +1787,7 @@
             <span class="flag" id="flagLowBatt">LOW BATT</span>
             <span class="flag" id="flagKill">KILL SW</span>
             <span class="flag" id="flagSdOk">SD OK</span>
+            <span class="flag" id="flagTimingClamp">CLAMP</span>
             <span class="flag config-source" id="flagConfigSource"
               >CFG: SD</span
             >
@@ -3114,7 +3136,8 @@
         if (dRpmEl) {
           dRpmEl.textContent = (dRpm > 0 ? "+" : "") + dRpm;
           // Color: green for accel, red for decel, white for stable
-          dRpmEl.style.color = dRpm > 50 ? "#00ff88" : dRpm < -50 ? "#ff4444" : "#fff";
+          dRpmEl.style.color =
+            dRpm > 50 ? "#00ff88" : dRpm < -50 ? "#ff4444" : "#fff";
         }
 
         // Phase Correction - timing phase lock (precision timing)
@@ -3123,7 +3146,8 @@
         if (phaseCorrEl) {
           phaseCorrEl.textContent = (phaseCorr > 0 ? "+" : "") + phaseCorr;
           // Color: cyan when correcting, white when stable
-          phaseCorrEl.style.color = Math.abs(phaseCorr) > 10 ? "#00d4ff" : "#fff";
+          phaseCorrEl.style.color =
+            Math.abs(phaseCorr) > 10 ? "#00d4ff" : "#fff";
         }
 
         // Predictive Ignition Mode - next-cycle firing when timing > trigger angle
@@ -3144,6 +3168,44 @@
             predictiveValueEl.style.color = "#00ff88";
             predictiveCardEl.style.background = "";
             predictiveCardEl.style.borderColor = "";
+          }
+        }
+
+        // Skipped Triggers - race condition diagnostic (should be 0 normally)
+        const skipped = data.skippedTriggers || 0;
+        const skippedEl = document.getElementById("skippedValue");
+        if (skippedEl) {
+          skippedEl.textContent = skipped;
+          // Red warning if skips are happening (indicates race condition)
+          skippedEl.style.color = skipped > 0 ? "#ff4444" : "#00ff88";
+        }
+
+        // Trigger Angle - shows trigger position BTDC
+        const trigAngle = data.trigAngle || 0;
+        const trigAngleEl = document.getElementById("trigAngleValue");
+        if (trigAngleEl) {
+          trigAngleEl.textContent = trigAngle;
+        }
+
+        // Timing Margin - (timing - trigAngle), positive = predictive fires
+        const margin = timing - trigAngle;
+        const marginEl = document.getElementById("marginValue");
+        const marginUnitEl = document.getElementById("marginUnit");
+        const marginCardEl = document.getElementById("marginCard");
+        if (marginEl && marginUnitEl && marginCardEl) {
+          marginEl.textContent = (margin > 0 ? "+" : "") + margin;
+          if (margin > 0) {
+            // Predictive mode territory
+            marginEl.style.color = "#ff9500";
+            marginUnitEl.textContent = "° predictive";
+            marginCardEl.style.background = "rgba(255, 149, 0, 0.15)";
+            marginCardEl.style.borderColor = "#ff9500";
+          } else {
+            // Normal mode
+            marginEl.style.color = "#00ff88";
+            marginUnitEl.textContent = "° normal";
+            marginCardEl.style.background = "";
+            marginCardEl.style.borderColor = "";
           }
         }
 
@@ -3200,6 +3262,9 @@
         document
           .getElementById("flagSdOk")
           .classList.toggle("ok", data.sdCardOk);
+        document
+          .getElementById("flagTimingClamp")
+          .classList.toggle("active", data.timingClamped);
 
         // Config source indicator: 0=SD, 1=Flash, 2=Hardcoded
         const cfgEl = document.getElementById("flagConfigSource");
@@ -5533,7 +5598,7 @@
         // Find the latest log file (highest number)
         if (logFiles.length === 0) {
           // First refresh the list, then load
-          fileExpecting = null;  // Clear file expecting
+          fileExpecting = null; // Clear file expecting
           logExpecting = "LOG_LS_THEN_LATEST";
           sendCmd("LS /racing-cdi");
           return;

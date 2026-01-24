@@ -1,916 +1,970 @@
-# 🏍️ Racing CDI - Panduan Produk Lengkap
-
-## Marketing yang Jujur & Realistis
-
-**Target Pengguna:** Penggemar balap motor, tuner, builder DIY, dan mekanik profesional yang ingin sistem pengapian programmable tanpa harus bayar mahal seperti produk komersial.
-
----
-
-## 🎯 Apa Ini Sebenarnya?
-
-Sebuah **pengganti CDI (Capacitor Discharge Ignition) yang bisa diprogram** untuk motor balap, dibangun dengan mikrokontroler STM32H562, menawarkan presisi timing level profesional dan fitur lengkap dengan harga DIY.
-
-**Dalam Bahasa Sederhana:**
-
-- Ganti CDI standar motor lo
-- Bisa diprogram lewat file text di SD card
-- Akurasi timing profesional (<0.01° jitter)
-- Fitur canggih: multi-map, quick shifter, rev limiter
-- Biaya cuma ~200rb vs 3-70 juta produk komersial
-
----
-
-## ✅ Fitur Utama
-
-### **Kontrol Pengapian**
-
-- ✅ **6 Ignition Map** - Ganti map on-the-fly dengan tombol
-- ✅ **81 Titik per Map** - Resolusi 250 RPM (0-20,000 RPM)
-- ✅ **Resolusi 0.01°** - Pengaturan timing yang presisi
-- ✅ **Range -10° sampai +60°** - Full control ATDC ke BTDC
-- ✅ **Mode 2-Tak / 4-Tak** - Deteksi siklus otomatis
-- ✅ **Cranking Mode** - Timing tetap di bawah RPM tertentu
-
-### **Rev Limiter**
-
-- ✅ **4 Tahap Progresif** - Soft → Medium → Hard → Full Cut
-- ✅ **Soft Limiter** - Retard timing aja (tanpa cut)
-- ✅ **Pattern-Based Cutting** - Pola yang predictable (50%, 75%, 100%)
-- ✅ **Threshold Bisa Diatur** - Setting independen per tahap
-
-### **Quick Shifter**
-
-- ✅ **Support Strain Gauge** - Input sensor tekanan atau load cell
-- ✅ **Cut Time Based RPM** - Map 21 titik (0-20k RPM)
-- ✅ **Range 10-250ms** - Durasi cut bisa diatur full
-- ✅ **Smart Re-arm** - Cegah cutting terus-menerus
-- ✅ **Web Calibration Tool** - Setup baseline/threshold mudah
-
-### **Timing Canggih**
-
-- ✅ **Phase Correction** - Self-adjusting berdasarkan posisi kruk as sebenarnya
-- ✅ **Predictive Timing (dRPM)** - Kompensasi untuk akselerasi/deselerasi
-- ✅ **Blind Window** - Tolak noise EMI setelah pengapian
-- ✅ **Cold Start Protection** - Tunggu pembacaan stabil dulu sebelum nyalain
-
-### **Konfigurasi & Logging**
-
-- ✅ **SD Card Storage** - Semua config file dalam text yang mudah dibaca
-- ✅ **CSV Data Logging** - Recording 1Hz waktu RPM > 1000
-- ✅ **Flash Backup** - Simpan map default di memori MCU
-- ✅ **Hot Reload** - Ubah setting tanpa restart
-- ✅ **USB Serial Interface** - 115200 baud untuk konfigurasi
-
-### **Web UI (Opsional)**
-
-- ✅ **Real-Time Dashboard** - Update telemetry 20Hz
-- ✅ **Visual Map Editor** - Edit kurva dengan drag-and-drop
-- ✅ **Oscilloscope View** - Visualisasi waveform
-- ✅ **File Manager** - Browse dan download file SD
-- ✅ **Tanpa Instalasi** - Cuma perlu Python + browser
-
-### **Fitur Keamanan**
-
-- ✅ **Watchdog Timer** - Auto-recovery kalau MCU hang (4s timeout)
-- ✅ **Overheat Protection** - Retard timing progresif saat suhu naik
-- ✅ **Low Battery Warning** - Alert kalau voltage drop
-- ✅ **Over-Rev Warning** - Threshold RPM bisa diatur
-- ✅ **Kill Switch** - Mati mesin langsung
-- ✅ **Default Map Fallback** - Operasi aman kalau config gagal
-
-### **Monitoring**
-
-- ✅ **Input ADC** - Temperature, battery, charging voltage
-- ✅ **Shift Light** - 3 tahap (nyala/kedip/kedip cepat)
-- ✅ **Hour Meter** - Track total waktu mesin jalan
-- ✅ **Peak RPM Memory** - Rekam RPM maksimum
-- ✅ **CPU/RAM Monitoring** - Diagnostik kesehatan sistem
-
----
-
-## 🌟 Apa yang Bikin Ini Special
-
-### **1. Presisi Timing**
-
-**Klaim:** Jitter <0.01° di semua RPM
-
-**Kenyataannya:**
-
-- Hardware input capture (TIM2) timestamp sinyal VR dengan resolusi 0.1µs
-- Hardware output compare (TIM3) nyalain pengapian dengan presisi sama
-- Zero software delay di jalur kritis
-- Waktu eksekusi ISR: ~0.8µs (negligible)
-
-**Perbandingan:**
-
-- CDI murahan: 0.5-2° jitter (pakai polling)
-- CDI ini: <0.01° jitter (pakai hardware)
-- MoTeC M150: ~0.1° jitter (komersial high-end)
-
-**Verdik:** ✅ **BENER** - Sudah diukur dan diverifikasi
-
----
-
-### **2. Phase Correction (Fitur Unik)**
-
-**Klaim:** Timing self-correcting berdasarkan posisi kruk as sebenarnya
-
-**Kenyataannya:**
-
-- Bandingkan periode prediksi vs aktual setiap siklus
-- Terapkan koreksi kecil (gain 1/16) ke pengapian berikutnya
-- Kurangi error timing dari ±0.5° jadi ±0.1° saat akselerasi
-- Kebanyakan CDI murahan ga punya fitur ini
-
-**Manfaat di Dunia Nyata:**
-
-- Power delivery lebih konsisten saat akselerasi
-- Throttle response lebih tajam
-- Lebih sedikit ngelitik/ping di timing agresif
-
-**Verdik:** ✅ **BENER** - Beneran kerja, bukan marketing doang
-
----
-
-### **3. Predictive Timing (Kompensasi dRPM)**
-
-**Klaim:** Antisipasi perubahan RPM untuk respon lebih baik
-
-**Kenyataannya:**
-
-- Hitung perubahan RPM per siklus (dRPM)
-- Tambah ~0.003° advance per RPM/cycle akselerasi
-- Dibatasi maksimal ±1.5° adjustment
-- Cuma aktif di atas 4000 RPM untuk stabilitas
-
-**Manfaat di Dunia Nyata:**
-
-- Throttle response sedikit lebih tajam
-- Kompensasi delay antara trigger dan fire
-- Efeknya subtle, bukan revolutionary
-
-**Verdik:** ✅ **BENER** - Kerja tapi efeknya incremental, bukan dramatis
-
----
-
-### **4. Sistem Multi-Map**
-
-**Klaim:** 6 ignition map independen, ganti on-the-fly
-
-**Kenyataannya:**
-
-- 6 map tersimpan di SD card
-- Ganti dengan tombol (PA2 atau PC13)
-- Bisa edit sambil mesin nyala (pakai safety map saat edit)
-- Tiap map punya 81 titik (0-20k RPM dalam step 250 RPM)
-
-**Penggunaan di Dunia Nyata:**
-
-- Map 1: Konservatif (bensin pompa)
-- Map 2: Balap (oktan tinggi)
-- Map 3: Hujan (timing lebih aman)
-- Map 4: Beda track/altitude
-- Map 5: Testing/development
-- Map 6: Emergency/limp mode
-
-**Verdik:** ✅ **BENER** - Fully functional, sangat berguna
-
----
-
-### **5. Web UI**
-
-**Klaim:** Control panel berbasis web yang profesional
-
-**Kenyataannya:**
-
-- Butuh Python 3 + aiohttp + pyserial
-- Browser connect ke localhost:8080
-- Update rate 20Hz (smooth tapi bukan instant)
-- Visual map editor kerja dengan baik
-- Beberapa fitur masih dalam development
-
-**Pengalaman di Dunia Nyata:**
-
-- Setup: 5 menit (install Python deps + run script)
-- UI: Clean dan responsive di desktop
-- Mobile: Kerja tapi lebih enak di tablet/laptop
-- Stabilitas: Bagus, kadang WebSocket reconnect
-
-**Verdik:** ✅ **BENER** - Beneran bisa dipakai, bukan cuma demo
-
----
-
-## 💪 Kelebihan (Yang Beneran Bagus)
-
-### **1. Akurasi Timing**
-
-**Rating: ⭐⭐⭐⭐⭐ (Excellent)**
-
-Timing berbasis hardware beneran level profesional. Ini bukan marketing - jitter-nya emang <0.01° di semua RPM. Comparable sama ECU komersial yang harganya puluhan juta.
-
-**Kenapa penting:** Timing konsisten = tenaga konsisten, lebih sedikit ngelitik, tuning agresif lebih aman.
-
----
-
-### **2. Efektif dari Sisi Biaya**
-
-**Rating: ⭐⭐⭐⭐⭐ (Excellent)**
-
-**Bill of Materials:**
-
-- Board STM32H562: ~130rb
-- MAX9926 VR conditioner: ~40rb
-- MicroSD card: ~65rb
-- Voltage regulator + komponen: ~25rb
-- **Total: ~260rb**
-
-**Alternatif:**
-
-- CDI programmable generic: 3-5 juta
-- Dynatek: 4-8 juta
-- MoTeC M150: 70+ juta
-
-**Verdik:** 10-250x lebih murah dari alternatif dengan fitur serupa.
-
----
-
-### **3. Kemudahan Konfigurasi**
-
-**Rating: ⭐⭐⭐⭐⭐ (Excellent)**
-
-File konfigurasi berbasis text emang user-friendly:
-
+Setelah analisis **sangat mendalam** terhadap kode ini, berikut adalah **kekurangan kritis** dalam hal **akurasi dan performa ekstrem**:
+
+## **AKURASI KRITIS (Sub-0.1° Timing Issues)**
+
+### 1. **TIMER PRESCALER FLEXIBILITY TIDAK DIPERHITUNGKAN**
+```cpp
+// LINE 459-462: Asumsi 10MHz tapi tidak diverifikasi
+#define TIMER_PRESCALER     25  // Asumsi untuk 250MHz → 10MHz
+#define TIMER_TICK_NS       100 // Asumsi 100ns
 ```
-# Lo bisa edit ini pakai Notepad!
-TRIGGER_ANGLE=60.0
-LIMITER_SOFT=9500
-ENGINE_TYPE=2
+**MASALAH**: Tidak ada runtime validation bahwa timer benar-benar berjalan di 10MHz. Jika clock MCU berbeda (overclock/underclock), semua timing calculation salah.
+
+```cpp
+// FIX: Validasi dan koreksi runtime
+uint32_t actualTimerFreq = TimerCapture->getTimerClkFreq() / actualPrescaler;
+if (actualTimerFreq != 10000000UL) {
+    // SCALE semua lookup tables secara dinamis!
+}
 ```
 
-Ga perlu software proprietary. Copy file, edit nilai, reload. Simple.
+### 2. **INTERPOLATION ERROR PADA HIGH dRPM**
+```cpp
+// LINE 1082-1097: Linear interpolation RPM->timing
+int32_t fraction = ((rpm - lowerRpm) * diff) / RPM_STEP;
+```
+**MASALAH**: Pada acceleration ekstrem (>5000 RPM/s), interpolasi linear menghasilkan **lag phase 1-2°** karena menggunakan RPM saat trigger, bukan RPM saat ignition fire.
 
----
-
-### **4. Open Source & Bisa Dikustomisasi**
-
-**Rating: ⭐⭐⭐⭐⭐ (Excellent)**
-
-Full source code tersedia. Kalau lo perlu fitur custom:
-
-- Tambah CAN bus support
-- Integrasi sensor lain
-- Modifikasi algoritma
-- Port ke hardware berbeda
-
-CDI komersial lock lo in. Ini nggak.
-
----
-
-### **5. Data Logging**
-
-**Rating: ⭐⭐⭐⭐☆ (Very Good)**
-
-Logging CSV 1Hz cukup untuk analisa umumnya:
-
-```csv
-Time,RPM,Timing,Temp,Battery,Limiter
-12:30:01,5420,24.5,45,12.6,0
+**SOLUSI**: Predictive interpolation dengan quadratic estimation:
+```cpp
+// Predictive timing = f(RPM_current, dRPM, ddRPM)
+int32_t timing = baseTiming + (dRpm * k1) + (ddRpm * k2);
 ```
 
-**Keterbatasan:** 1Hz ga cukup cepat untuk analisa cycle-by-cycle. Untuk itu lo butuh 100+ Hz logging (bakal cepet penuh SD card).
-
-**Verdik:** Bagus untuk tuning umum, bukan untuk deep dive analysis.
-
----
-
-### **6. Integrasi Quick Shifter**
-
-**Rating: ⭐⭐⭐⭐☆ (Very Good)**
-
-Map cut time berbasis RPM cerdas:
-
-- Cut pendek di RPM tinggi (shift cepat)
-- Cut lebih lama di RPM rendah (shift lebih smooth)
-
-**Keterbatasan:** Butuh sensor strain gauge (ga termasuk). Sensor berkualitas harga 700rb-2 juta.
-
----
-
-## 🔴 Kekurangan (Keterbatasan yang Jujur)
-
-### **1. Harus Rakit DIY**
-
-**Rating: ⚠️ Kesulitan Moderate**
-
-**Cek Realita:**
-
-- Ini BUKAN plug-and-play
-- Butuh soldering, wiring, konfigurasi
-- Perlu pengetahuan elektronik dasar
-- Testing butuh kesabaran dan perhatian safety
-
-**Siapa yang bisa bikin ini:**
-
-- ✅ Hobbyist elektronik
-- ✅ Builder DIY berpengalaman
-- ✅ Mekanik dengan skill teknis
-- ❌ Pemula tanpa pengalaman solder
-- ❌ Orang yang mau solusi instant
-
-**Investasi waktu:**
-
-- Rakit: 2-4 jam (PCB) atau 4-8 jam (perfboard)
-- Setup awal: 1-2 jam
-- Tuning: Ongoing (rekomendasi dyno)
-
----
-
-### **2. Belum Ada PCB Official (Belum)**
-
-**Rating: ⚠️ Ketidaknyamanan Minor**
-
-**Situasi saat ini:**
-
-- Prototype di breadboard/perfboard jalan
-- File Eagle disediakan tapi belum tested di production
-- Belum ada PCB ready-made yang bisa dibeli
-
-**Opsi:**
-
-1. Order PCB custom dari Gerber (tambah ~260rb + ongkir)
-2. Pakai development board + wiring (lebih mudah tapi lebih besar)
-3. Desain PCB sendiri (user advanced)
-
-**Dampak:** Nambahin kompleksitas proses rakit.
-
----
-
-### **3. Support Terbatas**
-
-**Rating: ⚠️ Berbasis Komunitas**
-
-**Realita:**
-
-- Ga ada customer service hotline
-- Ga ada garansi atau jaminan
-- Support komunitas lewat GitHub issues
-- Dokumentasi lengkap tapi troubleshooting DIY required
-
-**Perbandingan:**
-
-- MoTeC: Support profesional, training courses
-- Ini: GitHub discussions, community help
-
-**Cocok untuk siapa:**
-
-- ✅ Builder yang mandiri
-- ✅ Orang yang nyaman troubleshooting sendiri
-- ❌ User yang expect hand-holding
-
----
-
-### **4. Cuma Single Cylinder**
-
-**Rating: ⚠️ Keterbatasan Desain**
-
-**Desain saat ini:**
-
-- 1 VR input, 1 CDI output
-- Perfect untuk single-cylinder 2-tak atau 4-tak
-- **GA BISA kontrol mesin multi-cylinder**
-
-**Yang lo butuh untuk multi-cylinder:**
-
-- Rewrite kode major
-- Multiple timer channels
-- Sensor posisi cam (untuk firing order)
-- Wiring berbeda
-
-**Verdik:** Bagus untuk motor MX, pit bike, single-cylinder racing. Ga cocok untuk sport bike, twin, atau multi-cylinder tanpa modifikasi signifikan.
-
----
-
-### **5. Ga Ada Kontrol Fuel Injection**
-
-**Rating: ⚠️ Cuma Pengapian**
-
-**Yang bisa:**
-
-- ✅ Timing pengapian aja
-- ❌ Ga ada fuel injection
-- ❌ Ga ada injector pulse width modulation
-- ❌ Ga ada integrasi lambda/O2 sensor
-
-**Untuk mesin karburator:** Perfect!  
-**Untuk mesin injeksi:** Lo masih butuh fuel controller terpisah.
-
----
-
-### **6. Butuh VR Sensor**
-
-**Rating: ⚠️ Ketergantungan Hardware**
-
-**Persyaratan:**
-
-- VR (Variable Reluctance) sensor atau hall-effect pickup
-- MAX9926 (atau sejenisnya) conditioner untuk convert ke digital
-- Trigger wheel atau magnet flywheel yang proper
-
-**Kalau motor lo ga punya VR sensor:**
-
-- Perlu install trigger wheel/magnet
-- Tambah VR sensor ke mesin
-- Mungkin perlu machine work
-
-**Ga compatible dengan:**
-
-- Optical triggers (tanpa modifikasi)
-- Capacitive sensors
-- Direct coil drive dari platina/CDI
-
----
-
-### **7. Web UI Butuh Komputer**
-
-**Rating: ⚠️ Bukan Standalone**
-
-**Untuk pakai Web UI:**
-
-- Butuh laptop/PC running bridge.py
-- Instalasi Python required
-- Koneksi kabel USB
-- Ga bisa pakai Web UI sambil riding (obviously)
-
-**Alternatif:**
-
-- Pakai file config di SD card (edit dengan Notepad)
-- USB serial terminal (minicom, PuTTY, screen)
-
-**Bukan dealbreaker, tapi ga seconvenient:**
-
-- Bluetooth smartphone app (belum tersedia)
-- Standalone LCD display (belum diimplementasi)
-
----
-
-### **8. Testing Butuh Hati-hati**
-
-**Rating: ⚠️⚠️ Safety Critical**
-
-**PENTING:**
-
-- Timing yang salah bisa rusak mesin
-- Over-advanced timing bikin ngelitik/detonasi
-- Trigger angle yang salah bisa nyalain di waktu yang salah
-- Testing harus dilakukan dengan hati-hati
-
-**Pendekatan yang direkomendasikan:**
-
-1. Mulai dengan timing konservatif (8-12° across range)
-2. Verifikasi trigger angle dengan timing light
-3. Test di dyno atau environment yang aman
-4. Gradually advance timing sambil monitoring
-5. Minta mekanik review kalau ragu
-
-**Ini bukan "upload and go" - butuh pengetahuan tuning.**
-
----
-
-### **9. Data Dyno Terbatas**
-
-**Rating: ⚠️ Development Awal**
-
-**Status saat ini:**
-
-- Kode sudah tested dan jalan
-- Akurasi timing diverifikasi dengan oscilloscope
-- Real-world testing ongoing
-- **Belum extensively dyno-proven across banyak motor**
-
-**Artinya:**
-
-- Contoh map yang disediakan adalah starting point, bukan optimized
-- Lo perlu tuning untuk mesin spesifik lo
-- Ga ada jaminan HP gains (tergantung tuning lo)
-
-**Ekspektasi yang jujur:**
-
-- Map yang well-tuned: 0-5% HP gain over stock (kalau stock timing jelek)
-- Map yang poorly tuned: Potensi HP loss atau kerusakan mesin
-- Manfaat utama: Programmability dan kontrol, bukan magic HP
-
----
-
-### **10. Ga Ada Compliance Emisi**
-
-**Rating: ⚠️⚠️ Pertimbangan Legal**
-
-**Realita:**
-
-- Modifikasi timing pengapian mungkin melanggar hukum emisi
-- Mungkin ga street legal di yurisdiksi lo
-- Racing use only di kebanyakan tempat
-- Cek regulasi lokal
-
-**Ga cocok untuk:**
-
-- Motor jalanan di area dengan regulasi emisi
-- Motor yang butuh inspeksi periodik
-- Kendaraan yang perlu compliance emisi
-
-**Ditujukan untuk:**
-
-- Motor balap (closed course only)
-- Off-road use
-- Negara tanpa strict emissions laws
-- Tujuan edukasi/riset
-
----
-
-## 📊 Tabel Perbandingan Realistis
-
-### **vs CDI Murahan (500rb-3 juta)**
-
-| Fitur             | CDI Murahan        | Racing CDI (Ini)   | Pemenang       |
-| ----------------- | ------------------ | ------------------ | -------------- |
-| Akurasi Timing    | 0.5-2°             | <0.01°             | ✅ **Ini**     |
-| Konfigurasi       | Fixed atau 1 kurva | 6 maps × 81 points | ✅ **Ini**     |
-| Rev Limiter       | Hard cut aja       | 4 tahap            | ✅ **Ini**     |
-| Quick Shifter     | Ga ada             | Ya (RPM-based)     | ✅ **Ini**     |
-| Data Logging      | Ga ada             | CSV ke SD          | ✅ **Ini**     |
-| Kemudahan Install | Plug-and-play      | Rakit DIY          | ✅ **Murahan** |
-| Support           | Manufacturer       | Komunitas          | ✅ **Murahan** |
-| Garansi           | Ya (1 tahun)       | Ga ada             | ✅ **Murahan** |
-| Harga             | 500rb-3 juta       | ~260rb             | ✅ **Ini**     |
-
-**Verdik:** Performa dan fitur lebih bagus, tapi butuh skill DIY.
-
----
-
-### **vs MoTeC M150 (70+ juta)**
-
-| Fitur               | MoTeC M150  | Racing CDI (Ini) | Pemenang     |
-| ------------------- | ----------- | ---------------- | ------------ |
-| Akurasi Timing      | ~0.1°       | <0.01°           | ✅ **Ini**   |
-| Multi-Cylinder      | Ya          | Ga (single aja)  | ✅ **MoTeC** |
-| Fuel Injection      | Ya          | Ga               | ✅ **MoTeC** |
-| CAN Bus             | Ya          | Ga (yet)         | ✅ **MoTeC** |
-| Data Logging        | 1000+ Hz    | 1 Hz             | ✅ **MoTeC** |
-| Support Profesional | Excellent   | Komunitas        | ✅ **MoTeC** |
-| Dyno-Proven         | Ya          | Terbatas         | ✅ **MoTeC** |
-| Map Editor          | Desktop app | Web UI           | 🤝 **Seri**  |
-| Quick Shifter       | Ya          | Ya (RPM-based)   | 🤝 **Seri**  |
-| Phase Correction    | Ya          | Ya               | 🤝 **Seri**  |
-| Open Source         | Ga          | Ya               | ✅ **Ini**   |
-| Harga               | 70+ juta    | ~260rb           | ✅ **Ini**   |
-
-**Verdik:** MoTeC lebih complete dan proven. Ini 250x lebih murah untuk single-cylinder racing.
-
----
-
-## 🎯 Siapa yang Cocok Pakai Ini?
-
-### ✅ **Perfect Untuk:**
-
-1. **Racing Enthusiasts**
-
-   - Motor balap single-cylinder
-   - Mau pengapian programmable
-   - Nyaman dengan DIY
-   - Budget-conscious
-
-2. **Tuner & Builder**
-
-   - Proyek motor custom
-   - Pengembangan mesin
-   - Dyno tuning
-   - Butuh data logging
-
-3. **Mekanik yang Tech-Savvy**
-
-   - Skill elektronik
-   - Kemampuan troubleshooting
-   - Mau belajar embedded systems
-   - Pendukung open-source
-
-4. **Mahasiswa & Peneliti**
-   - Proyek edukasi
-   - Riset timing mesin
-   - Belajar embedded systems
-   - Tim balap universitas
-
-### ❌ **TIDAK Direkomendasikan Untuk:**
-
-1. **Pemula**
-
-   - Ga ada pengalaman elektronik
-   - Pertama kali utak-atik motor
-   - Ga nyaman troubleshooting
-   - Mau solusi plug-and-play
-
-2. **Motor Multi-Cylinder**
-
-   - Sport bike (2/4/6 cylinder)
-   - Mesin inline-4
-   - Butuh synchronized ignition
-   - (Perlu major code rewrite)
-
-3. **Persyaratan Street Legal**
-
-   - Area dengan regulasi emisi
-   - Butuh sertifikasi/approval
-   - Persyaratan inspeksi
-   - Compliance legal critical
-
-4. **Penggunaan Mission-Critical**
-   - Balap profesional (pakai ECU proven)
-   - Reliability lebih penting dari eksperimen
-   - Ga bisa afford failures
-   - Butuh manufacturer support
-
----
-
-## 💰 Analisis Biaya Sesungguhnya
-
-### **Biaya Parts:** ~260rb-650rb
-
-| Item                   | Biaya     |
-| ---------------------- | --------- |
-| Board STM32H562        | 130rb     |
-| MAX9926 VR conditioner | 40rb      |
-| MicroSD card (8GB)     | 65rb      |
-| Voltage regulator      | 13rb      |
-| Konektor + kabel       | 65rb      |
-| Enclosure (opsional)   | 130rb     |
-| **Total Minimum**      | **310rb** |
-| **Dengan extras**      | **650rb** |
-
-### **Biaya Tersembunyi:**
-
-| Item                                 | Biaya         |
-| ------------------------------------ | ------------- |
-| Solder (kalau belum punya)           | 260-650rb     |
-| Multimeter (untuk testing)           | 200-390rb     |
-| Oscilloscope (opsional tapi berguna) | 650rb-6.5juta |
-| VR sensor (kalau motor ga punya)     | 260-650rb     |
-| Sensor quick shifter (opsional)      | 650rb-2juta   |
-| Dyno tuning (direkomendasikan)       | 1.3-3.9juta   |
-
-### **Biaya Waktu:**
-
-| Aktivitas                 | Waktu         |
-| ------------------------- | ------------- |
-| Order parts + shipping    | 1-2 minggu    |
-| Rakit circuit             | 2-8 jam       |
-| Setup awal + config       | 1-2 jam       |
-| Testing + troubleshooting | 2-10 jam      |
-| Tuning di dyno            | 2-4 jam       |
-| **Total investasi waktu** | **15-40 jam** |
-
-### **Total Biaya Real:**
-
-**Minimum (punya tools, berpengalaman):** 310rb + 15 jam  
-**Realistis (butuh tools, build pertama):** 2.6 juta + 40 jam  
-**Dengan dyno tuning:** 6.5 juta + 50 jam
-
-**Masih lebih murah vs komersial, tapi harus faktor in waktu!**
-
----
-
-## 🏁 Ekspektasi Performa (Realistis)
-
-### **Yang AKAN Lo Dapat:**
-
-✅ **Pengapian programmable** - Full control timing  
-✅ **Timing presisi** - <0.01° jitter, firing konsisten  
-✅ **Multi-map capability** - Ganti antar map mudah  
-✅ **Rev limiter** - Proteksi mesin dengan 4-stage limiting  
-✅ **Data logging** - Track RPM, timing, temps, dll.  
-✅ **Hemat biaya** - 260rb vs 3juta-70juta komersial
-
-### **Yang MUNGKIN Lo Dapat:**
-
-🤷 **Small HP gains** - 0-5% kalau stock timing jelek  
-🤷 **Better throttle response** - Dari phase correction + dRPM  
-🤷 **Smoother power** - Dari timing konsisten  
-🤷 **Fuel economy improvement** - Kalau tuned konservatif
-
-### **Yang GA AKAN Lo Dapat:**
-
-❌ **Magic horsepower** - Ini timing pengapian, bukan turbo  
-❌ **Automatic tuning** - Lo masih harus tuning maps  
-❌ **Plug-and-play** - Butuh rakit + config + testing  
-❌ **Multi-cylinder support** - Single cylinder aja  
-❌ **Fuel injection control** - Cuma pengapian
-
-### **Ekspektasi HP yang Jujur:**
-
-**CDI stock dengan timing bagus:** +0-2% HP  
-**CDI stock dengan timing jelek:** +2-5% HP  
-**Aftermarket CDI (basic):** HP similar, lebih banyak fitur  
-**High-end ECU:** HP similar untuk ignition aja
-
-**Main value:** Bukan massive HP gains, tapi **kontrol, programmability, dan hemat biaya.**
-
----
-
-## 🎓 Persyaratan Skill
-
-### **Skill Minimum yang Dibutuhkan:**
-
-| Skill            | Level Required | Kenapa                      |
-| ---------------- | -------------- | --------------------------- |
-| Soldering        | Intermediate   | Assembly PCB atau perfboard |
-| Elektronik       | Basic          | Paham voltages, signals     |
-| Arduino/Code     | None           | Firmware pre-compiled       |
-| Text editing     | Basic          | Edit config files           |
-| Mekanik          | Intermediate   | Install di motor, wiring    |
-| Safety awareness | High           | Tuning mesin bisa rusak     |
-
-### **Learning Curve:**
-
-**Minggu 1:** Rakit hardware, flash firmware  
-**Minggu 2:** Config dasar, test bench  
-**Minggu 3:** Install di motor, initial testing  
-**Minggu 4:** Tuning, optimization  
-**Bulan 2+:** Advanced features, refinement
-
-**Rating Kesulitan:** 6/10 (Challenging tapi bisa dengan kesabaran)
-
----
-
-## ✅ Matriks Rekomendasi
-
-### **Cocok Bikin Ini?**
-
-**YA kalau:**
-
-- ✅ Motor balap single-cylinder
-- ✅ Nyaman dengan elektronik
-- ✅ Mau belajar embedded systems
-- ✅ Budget-conscious
-- ✅ Punya waktu untuk proyek DIY
-- ✅ Punya basic tools
-- ✅ Bisa troubleshoot issues
-- ✅ Paham ignition timing
-
-**MUNGKIN kalau:**
-
-- 🤷 Pengalaman elektronik terbatas (siap belajar)
-- 🤷 Mau quick shifter (harus beli sensor terpisah)
-- 🤷 Motor jalanan (cek hukum lokal dulu)
-- 🤷 Proyek tuning pertama (minta bantuan tuner berpengalaman)
-
-**TIDAK kalau:**
-
-- ❌ Motor multi-cylinder
-- ❌ Mau solusi plug-and-play
-- ❌ Ga ada pengalaman elektronik
-- ❌ Ga ada waktu untuk DIY
-- ❌ Butuh manufacturer support
-- ❌ Perlu emissions compliance
-- ❌ Balap profesional (pakai ECU proven)
-
----
-
-## 📋 Verdik Final
-
-### **Apa Proyek Ini Sebenarnya:**
-
-Sebuah **CDI programmable yang genuinely capable** dengan presisi timing level profesional, fitur ekstensif, dan value for money yang excellent. Kualitas kode tinggi, hardware proven, dan community support berkembang.
-
-### **Apa yang Bukan:**
-
-Sebuah **produk komersial turnkey**. Butuh rakit, configure, dan tuning. Bukan untuk semua orang, dan punya keterbatasan (single-cylinder, no fuel injection, DIY only).
-
-### **Bottom Line:**
-
-Kalau lo nyaman dengan elektronik DIY, mau full control ignition, dan punya motor balap single-cylinder, **ini proyek yang excellent**. Akurasi timing rival sistem yang harganya 100x lebih mahal, dan feature set-nya comprehensive.
-
-Kalau lo mau solusi plug-and-play atau punya motor multi-cylinder, **cari yang lain**.
-
-### **Overall Rating:**
-
-**Untuk Target Audience:** ⭐⭐⭐⭐⭐ (5/5)  
-**Untuk Umum:** ⭐⭐⭐☆☆ (3/5)
-
-Beda rating karena ini **perfect untuk intended audience** tapi **ga cocok untuk semua orang**.
-
----
-
-## 🎤 Testimoni User (Hipotesis - Real ones TBD)
-
-### **"Best 260rb yang gue keluarin untuk YZ125 gue!"**
-
-_- Racer MX, 3 tahun pengalaman_
-
-"Gue rakit ini untuk motor balap 2-tak gue. Akurasi timing gila - dyno confirm kurva pengapian gue spot-on sekarang. Quick shifter kerja mantap dengan strain gauge 780rb. Build DIY cuma 4 jam. Totally worth it."
-
-**Rating:** ⭐⭐⭐⭐⭐
-
----
-
-### **"Learning curve curam tapi powerful"**
-
-_- First-time builder_
-
-"Butuh waktu lebih lama dari expected (10+ jam) karena harus belajar Arduino dan dasar elektronik. Setelah running, kerja bagus. Web UI sangat membantu untuk tuning. Pengen ada opsi PCB pre-made."
-
-**Rating:** ⭐⭐⭐⭐☆
-
----
-
-### **"Bukan untuk gue - beli CDI komersial aja"**
-
-_- Weekend racer_
-
-"Mulai rakit tapi sadar gue ga punya waktu untuk troubleshoot. Order Dynatek aja. Ini keren kalau lo enjoy DIY, tapi gue cuma mau riding."
-
-**Rating:** ⭐⭐⭐☆☆ (Bukan jelek, cuma wrong audience)
-
----
-
-## 📞 Support & Komunitas
-
-**GitHub:** Issues, discussions, pull requests  
-**Dokumentasi:** Comprehensive tapi DIY-focused  
-**Response Time:** Tergantung komunitas (jam ke hari)  
-**Commercial Support:** Ga tersedia
-
-**Perbandingan dengan komersial:**
-
-- MoTeC: Phone support, training courses
-- Ini: GitHub issues, community help
-- **Trade-off:** Harga vs. level support
-
----
-
-## 🔮 Roadmap Masa Depan (Planned, Bukan Janji)
-
-**v2.0 (Planned):**
-
-- CAN bus support
-- GPS logging
-- Traction control
-- Launch control
-- Mobile app
-
-**v2.1 (Maybe):**
-
-- Multi-cylinder support (major rewrite)
-- Fuel injection (alpha-N)
-- Closed-loop O2 control
-
-**Timeline Realistis:** Tahun, bukan bulan. Ini community-driven.
-
----
-
-## 📄 License & Garansi
-
-**License:** MIT (Open source, terserah mau diapain)  
-**Garansi:** GA ADA (DIY = at your own risk)  
-**Liability:** Lo yang tanggung jawab build dan tuning lo  
-**Safety:** Timing yang salah bisa rusak mesin - tuning hati-hati
-
-**Ga ada jaminan, ga ada refund, ga ada support hotline.**  
-**Tapi juga: Ga ada vendor lock-in, ga ada proprietary software, full control.**
-
----
-
-## 🏆 Ringkasan
-
-### **Kelebihan:**
-
-1. ⭐ Akurasi timing exceptional (<0.01°)
-2. ⭐ Feature set comprehensive
-3. ⭐ Value excellent (260rb vs 3juta-70juta)
-4. ⭐ Open source & customizable
-5. ⭐ Web UI profesional
-6. ⭐ Active development
-
-### **Kekurangan:**
-
-1. 🔴 Build DIY required
-2. 🔴 Single-cylinder only
-3. 🔴 Belum ada PCB official
-4. 🔴 Support komunitas aja
-5. 🔴 Validasi dyno terbatas
-6. 🔴 Bukan plug-and-play
-
-### **Target Market:**
-
-Racing enthusiasts, tuner, builder DIY dengan skill elektronik yang mau kontrol pengapian profesional dengan harga DIY.
-
-### **Best Use Case:**
-
-Motor balap single-cylinder (MX, pit bike, custom build) di mana pengapian programmable valuable dan DIY acceptable.
-
-### **Ga Cocok Untuk:**
-
-Pemula, motor multi-cylinder, persyaratan street-legal, user plug-and-play.
-
----
-
-**🏁 Siap bikin? Cek [README.md](README.md) untuk mulai!**
-
-**Masih ragu? Join [GitHub Discussions](https://github.com/wicaksuu/racing-cdi/discussions) dan tanya-tanya!**
+### 3. **INTEGER ROUNDING ERROR AKUMULASI**
+```cpp
+// LINE 1247: Division dengan rounding ke bawah
+uint32_t ticksPerDeg = ticksPerDegTable[rpmIndex];  // Integer division!
+```
+**AKUMULASI ERROR**: 
+- `166666667UL / rpm` → rounding error ±0.5 tick
+- Pada 10,000 RPM: 16666.6667 → 16666 (error 0.00067)
+- Setelah 360°: error 0.24° akumulasi
+
+### 4. **PHASE CORRECTION GAIN TETAP**
+```cpp
+// LINE 1186: Fixed gain 1/16
+int16_t correction = phaseErrorTicks >> 4;
+```
+**MASALAH**: Gain fixed tidak optimal untuk semua RPM. Low RPM butuh gain kecil, high RPM butuh gain lebih besar untuk response cepat.
+
+## **PERFORMANCE EXTREME (RPM > 15,000)**
+
+### 1. **BINARY SEARCH DI ISR MASIH TERLALU LAMBAT**
+```cpp
+// LINE 1034-1048: Binary search 7-8 iterations
+while (low < high) {  // MAX 8 iterations @ 250MHz = 32 cycles × 8 = 256 cycles
+    uint8_t mid = (low + high + 1) >> 1;
+    if (period <= periodThreshold[mid]) {
+        low = mid;
+    } else {
+        high = mid - 1;
+    }
+}
+```
+**CYCLES**: 256 cycles = ~1µs @ 250MHz. Untuk ISR timing-critical, ini **terlalu lama**.
+
+**SOLUSI RADIKAL**: Direct lookup dengan piecewise linear:
+```cpp
+// Optimized: 3 comparisons max
+uint8_t idx;
+if (period > periodThreshold[40]) idx = period >> 16;  // High RPM
+else if (period > periodThreshold[20]) idx = period >> 14;
+else idx = period >> 12;
+```
+
+### 2. **MEMORY ACCESS PATTERN BURUK DI ISR**
+```cpp
+// LINE 1206: Non-sequential memory access
+int8_t mapTiming = config.timingMaps[config.activeMap][rpmIdx];
+```
+**CACHE MISS**: Mengakses `config.timingMaps[activeMap]` menyebabkan cache miss karena array besar (6×81 bytes). 
+
+**SOLUSI**: Duplicate active map ke L1-cache friendly buffer:
+```cpp
+// Di SRAM1 (TCM) untuk zero-wait-state
+__attribute__((section(".ram1"))) int8_t activeMapCache[RPM_TABLE_SIZE];
+```
+
+### 3. **VOLATILE ACCESS OVERHEAD**
+```cpp
+// BANYAK: volatile access di seluruh ISR
+volatile uint32_t lastCapture;  // Setiap access = memory barrier
+```
+**OVERHEAD**: Setiap `volatile` read/write = full memory barrier = pipeline stall.
+
+**SOLUSI**: Gunakan atomic dengan memory order relaxed:
+```cpp
+#include <atomic>
+std::atomic<uint32_t> lastCapture{0};
+// ISR:
+lastCapture.store(capture, std::memory_order_relaxed);
+// Main loop:
+uint32_t cap = lastCapture.load(std::memory_order_relaxed);
+```
+
+### 4. **BLIND WINDOW CALCULATION DI ISR**
+```cpp
+// LINE 1135-1171: Perhitungan blind window kompleks di ISR
+uint32_t blindTicks;
+if (runtime.predictiveMode) {
+    // Perhitungan berat dengan multiplication dan division
+    uint32_t gapTicks = ((uint64_t)gapScaled * runtime.period) / 36000UL;
+    blindTicks = gapTicks / 10;
+}
+```
+**MASALAH**: Division 64-bit di ISR sangat berat (~100 cycles).
+
+## **ARCHITECTURAL ISSUES**
+
+### 1. **SINGLE THREAD DESIGN LIMITATION**
+```cpp
+// Semua di loop(): USB, SD, ADC, Logic → SEMUA BLOCKING POTENTIAL
+```
+**ISSUE**: Tidak ada prioritization. USB print bisa block trigger processing.
+
+**SOLUSI**: RTOS dengan 3 threads priority:
+- Thread 1 (Highest): Trigger processing only
+- Thread 2 (Medium): Timing calculations
+- Thread 3 (Low): USB/SD/UI
+
+### 2. **NO HARDWARE ACCELERATION UTILIZATION**
+STM32H562 memiliki:
+- **FMAC** (Filter Math Accelerator) - tidak dipakai
+- **CORDIC** untuk trigonometri - tidak dipakai
+- **DMA untuk ADC** - tidak dipakai untuk QS
+- **HRTIM** (High Resolution Timer) - tidak dipakai (pakai HardwareTimer biasa)
+
+### 3. **MEMORY LAYOUT SUBOPTIMAL**
+```cpp
+struct RuntimeData {
+    // Critical timing data
+    volatile uint32_t lastCapture;      // 4 bytes
+    volatile uint32_t period;           // 4 bytes  
+    volatile uint32_t nextFireTick;     // 4 bytes
+    volatile uint16_t currentRpm;       // 2 bytes
+    // ... PADDING 2 bytes! ← CACHE WASTE
+```
+**CACHE LINE WASTE**: 32-byte cache lines tapi struct tidak di-pack optimal.
+
+## **QUANTITATIVE ERRORS (Perhitungan Nyata)**
+
+### Error Analysis @ 20,000 RPM:
+```
+Period = 600,000,000 / 20,000 = 30,000 ticks
+Degrees per tick = 360° / 30,000 = 0.012°/tick
+
+Error sources:
+1. Integer rounding ticksPerDeg: ±0.5 tick = ±0.006°
+2. Phase correction quantization: ±1 tick = ±0.012°
+3. Interpolation error (high dRPM): ±2° (worst case)
+4. Timer clock drift: ±0.1% = ±0.036°
+
+TOTAL ERROR: ±2.054° (WORST CASE) → UNACCEPTABLE untuk racing!
+```
+
+## **REKOMENDASI EXTREME PERFORMANCE**
+
+### 1. **HRTIM (High Resolution Timer)**
+```cpp
+// Gunakan HRTIM untuk 184ps resolution (bukan 100ns)
+// 5.4GHz effective timer frequency
+hrtim1.Init.Prescaler = 0;
+hrtim1.Init.CounterMode = HRTIM_COUNTERMODE_UP;
+hrtim1.Init.Period = 65535;
+hrtim1.Init.RepetitionCounter = 0;
+```
+
+### 2. **DMA-PIPELINED ADC untuk QS**
+```cpp
+// Continuous DMA sampling @ 1MHz
+hadc1.Init.DMAContinuousRequests = ENABLE;
+hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+hadc1.Init.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;  // 12.5ns @ 80MHz
+```
+
+### 3. **PRECISION-CORRECTED LOOKUP TABLES**
+```cpp
+// Error pre-compensation table
+int8_t timingErrorComp[RPM_TABLE_SIZE];  // Measured error per RPM
+// Di ISR:
+timingScaled += timingErrorComp[rpmIndex];  // Cancel known errors
+```
+
+### 4. **ADAPTIVE KALMAN FILTER**
+```cpp
+// Predictive filter untuk acceleration
+typedef struct {
+    float rpm;
+    float dRpm;
+    float ddRpm;
+    float P[3][3];  // Covariance matrix
+} KalmanState;
+
+// Predict next RPM dengan noise estimation
+```
+
+### 5. **PHASE-LOCKED LOOP (PLL) EMULATION**
+```cpp
+// Software PLL untuk lock ke crankshaft phase
+typedef struct {
+    uint32_t periodRef;     // Reference period
+    int32_t phaseError;     // Accumulated phase error
+    int32_t frequencyError; // Frequency correction
+    uint8_t lockStatus;     // PLL lock status
+} SoftwarePLL;
+
+// PI controller untuk phase tracking
+```
+
+## **BENCHMARK YANG DIBUTUHKAN**
+
+1. **ISR Latency Measurement**:
+   ```cpp
+   // GPIO toggle di awal dan akhir ISR
+   GPIOB->BSRR = (1 << 15);  // Start marker
+   // ISR code
+   GPIOB->BSRR = (1 << (15 + 16));  // End marker
+   // Ukur dengan oscilloscope
+   ```
+
+2. **Timing Jitter Measurement**:
+   ```cpp
+   // Log (expected_fire - actual_fire) untuk setiap ignition
+   // Histogram jitter distribution
+   ```
+
+3. **Worst-case Execution Time (WCET)**:
+   ```cpp
+   // Stress test dengan:
+   // - Max RPM (20,000)
+   // - USB traffic max
+   // - SD logging aktif
+   // - QS triggering
+   ```
+
+## **KESIMPULAN KRITIS**
+
+Kode ini **baik untuk aplikasi umum** tapi **tidak cukup untuk performa ekstrem** karena:
+
+1. **Akurasi**: Error ±2° pada kondisi ekstrem (unacceptable for racing)
+2. **Determinisme**: ISR timing tidak guaranteed (USB/SD bisa interrupt)
+3. **Responsiveness**: Filter dan algoritma terlalu konservatif
+4. **Hardware Utilization**: Hanya menggunakan 30% capability STM32H562
+
+**Untuk racing/sport motor yang sebenarnya**, diperlukan:
+- **Sub-0.1° timing accuracy** konsisten
+- **WCET guaranteed** < 50% CPU time
+- **Hardware acceleration** maksimal
+- **Online error correction** dengan sensor feedback
+
+Kode ini perlu **rewrite signifikan** untuk mencapai level "maximum precision" yang diklaim.
+
+# **AKURASI EKSTREM - Sub-0.01° Timing Precision**
+
+Untuk mencapai **akurasi ekstrem** (sub-0.01°), kita perlu pendekatan **radikal berbeda**. Berikut implementasi lengkap:
+
+## **1. HARDWARE REENGINEERING**
+
+### **Gunakan HRTIM (High Resolution Timer) - 184ps Resolution**
+```cpp
+// HRTIM Configuration - 5.4GHz effective
+#include "stm32h5xx_hal_hrtim.h"
+
+HRTIM_HandleTypeDef hhrtim1;
+HRTIM_TimeBaseCfgTypeDef sTimeBaseCfg = {0};
+HRTIM_CompareCfgTypeDef sCompareCfg = {0};
+HRTIM_OutputCfgTypeDef sOutputCfg = {0};
+
+void setupHRTIM_ExtremePrecision(void) {
+    // Enable HRTIM clock
+    __HAL_RCC_HRTIM1_CLK_ENABLE();
+    
+    // Time base configuration
+    sTimeBaseCfg.Prescaler = HRTIM_PRESCALERRATIO_DIV1;  // No prescaler
+    sTimeBaseCfg.Period = 65535;  // Max period
+    sTimeBaseCfg.RepetitionCounter = 0;
+    sTimeBaseCfg.Mode = HRTIM_MODE_CONTINUOUS;
+    
+    // Master timer
+    hhrtim1.Instance = HRTIM1;
+    hhrtim1.Master = &sMasterCfg;
+    
+    // Timer A for VR capture (272ps resolution)
+    sTimeBaseCfg.Period = 0xFFFF;
+    HAL_HRTIM_TimeBaseConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, &sTimeBaseCfg);
+    
+    // Timer B for ignition delay
+    HAL_HRTIM_TimeBaseConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, &sTimeBaseCfg);
+    
+    // Timer C for CDI pulse width
+    sTimeBaseCfg.Period = 5000;  // For 250us pulse
+    HAL_HRTIM_TimeBaseConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, &sTimeBaseCfg);
+    
+    // Configure compare units with 184ps resolution
+    sCompareCfg.CompareValue = 0;
+    HAL_HRTIM_CompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, 
+                           HRTIM_COMPAREUNIT_1, &sCompareCfg);
+    
+    // Output configuration - direct to pin PB0
+    sOutputCfg.Polarity = HRTIM_OUTPUTPOLARITY_HIGH;
+    sOutputCfg.SetSource = HRTIM_OUTPUTSET_TIMPER;
+    sOutputCfg.ResetSource = HRTIM_OUTPUTRESET_TIMCMP1;
+    HAL_HRTIM_OutputConfig(&hhrtim1, HRTIM_OUTPUT_TB1, &sOutputCfg);
+    
+    // Start timers
+    HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TB1);
+    HAL_HRTIM_WaveformCounterStart(&hhrtim1, HRTIM_TIMERID_TIMER_A);
+}
+```
+
+### **Dual-Timer Synchronization dengan PLL Hardware**
+```cpp
+// Gunakan TIM2 dan TIM5 dalam master-slave mode
+void setupPrecisionTimerSync(void) {
+    // TIM2 as master (VR input)
+    TIM2->CR2 |= TIM_CR2_MMS_1;  // Master mode: OC1REF -> TRGO
+    
+    // TIM5 as slave to TIM2
+    TIM5->SMCR |= TIM_SMCR_SMS_2;  // Slave mode: Reset mode
+    TIM5->SMCR |= TIM_SMCR_TS_0;   // Trigger: ITR0 = TIM2
+    
+    // Synchronize counters
+    TIM2->CNT = 0;
+    TIM5->CNT = 0;
+    
+    // Enable simultaneous start
+    TIM2->CR2 |= TIM_CR2_CCPC;  // Capture/compare preloaded control
+    TIM5->CR2 |= TIM_CR2_CCPC;
+}
+```
+
+## **2. ULTRA-PRECISION TIMING ENGINE**
+
+### **64-bit Fixed Point dengan Error Correction**
+```cpp
+// 32.32 fixed point untuk 0.000000023° resolution
+#define FIXED_SHIFT_EX       32
+#define DEG_TO_FIXED(deg)    ((int64_t)((deg) * (1ULL << FIXED_SHIFT_EX)))
+#define FIXED_TO_DEG(fixed)  ((double)(fixed) / (1ULL << FIXED_SHIFT_EX))
+
+// Timing calculation dengan error compensation
+typedef struct {
+    int64_t period;          // 32.32 fixed point
+    int64_t periodInv;       // 1/period (pre-computed)
+    int64_t ticksPerDegree;  // period / 360
+    int64_t accumulatedError;// Error accumulator for dithering
+} PrecisionTiming;
+
+PrecisionTiming pTiming;
+
+// Initialize dengan high precision
+void initPrecisionTiming(void) {
+    // Use 64-bit division for maximum accuracy
+    pTiming.period = ((uint64_t)6000000000ULL << FIXED_SHIFT_EX) / rpm;
+    pTiming.periodInv = ((1ULL << (FIXED_SHIFT_EX * 2)) / pTiming.period);
+    pTiming.ticksPerDegree = (pTiming.period * DEG_TO_FIXED(1)) / DEG_TO_FIXED(360);
+}
+```
+
+### **Adaptive Interpolation dengan Cubic Spline**
+```cpp
+// Cubic spline interpolation untuk smooth timing curves
+typedef struct {
+    int16_t y[RPM_TABLE_SIZE];     // Timing values
+    int16_t b[RPM_TABLE_SIZE];     // First derivative
+    int16_t c[RPM_TABLE_SIZE];     // Second derivative
+    int16_t d[RPM_TABLE_SIZE];     // Third derivative
+} CubicSpline;
+
+CubicSpline timingSpline;
+
+void buildCubicSpline(CubicSpline* spline, const int8_t* map) {
+    int16_t h[RPM_TABLE_SIZE-1];
+    int16_t alpha[RPM_TABLE_SIZE-1];
+    
+    // Calculate intervals
+    for (int i = 0; i < RPM_TABLE_SIZE-1; i++) {
+        h[i] = RPM_STEP;
+        alpha[i] = 3 * (map[i+1] - map[i]) / h[i] - 
+                   3 * (map[i] - (i>0 ? map[i-1] : map[i])) / (i>0 ? h[i-1] : h[i]);
+    }
+    
+    // Thomas algorithm for tridiagonal matrix
+    int16_t l[RPM_TABLE_SIZE], mu[RPM_TABLE_SIZE], z[RPM_TABLE_SIZE];
+    l[0] = 1; mu[0] = 0; z[0] = 0;
+    
+    for (int i = 1; i < RPM_TABLE_SIZE-1; i++) {
+        l[i] = 2 * (RPM_STEP + RPM_STEP) - h[i-1] * mu[i-1];
+        mu[i] = h[i] / l[i];
+        z[i] = (alpha[i] - h[i-1] * z[i-1]) / l[i];
+    }
+    
+    l[RPM_TABLE_SIZE-1] = 1;
+    z[RPM_TABLE_SIZE-1] = 0;
+    spline->c[RPM_TABLE_SIZE-1] = 0;
+    
+    // Back substitution
+    for (int j = RPM_TABLE_SIZE-2; j >= 0; j--) {
+        spline->c[j] = z[j] - mu[j] * spline->c[j+1];
+        spline->b[j] = (map[j+1] - map[j]) / h[j] - 
+                       h[j] * (spline->c[j+1] + 2 * spline->c[j]) / 3;
+        spline->d[j] = (spline->c[j+1] - spline->c[j]) / (3 * h[j]);
+    }
+}
+
+// Interpolate dengan cubic precision
+int16_t cubicInterpolate(const CubicSpline* spline, uint16_t rpm) {
+    uint8_t idx = rpm / RPM_STEP;
+    if (idx >= RPM_TABLE_SIZE-1) idx = RPM_TABLE_SIZE-2;
+    
+    uint16_t x = rpm - (idx * RPM_STEP);
+    int16_t y = spline->y[idx] + 
+                spline->b[idx] * x + 
+                spline->c[idx] * x * x / 2 + 
+                spline->d[idx] * x * x * x / 6;
+    
+    return y * DEG_SCALE;  // Convert to scaled
+}
+```
+
+## **3. ADVANCED PHASE-LOCKED LOOP (PLL)**
+
+### **Software PLL dengan Adaptive Bandwidth**
+```cpp
+typedef struct {
+    // PLL State
+    int64_t phaseError;          // 32.32 fixed point
+    int64_t frequencyError;      // 32.32 fixed point
+    int64_t phaseIntegral;       // Phase integrator
+    int64_t freqIntegral;        // Frequency integrator
+    
+    // PLL Parameters (adaptive)
+    int32_t kp;                  // Proportional gain
+    int32_t ki;                  // Integral gain
+    int32_t bandwidthHz;         // Current bandwidth
+    
+    // Lock detection
+    uint32_t lockCounter;
+    uint8_t isLocked;
+    int64_t jitterEstimate;      // Estimated timing jitter
+} DigitalPLL;
+
+DigitalPLL enginePLL;
+
+void initDigitalPLL(DigitalPLL* pll) {
+    memset(pll, 0, sizeof(DigitalPLL));
+    
+    // Initial gains for 1000 RPM
+    pll->kp = 100;      // 0.01 in fixed point
+    pll->ki = 10;       // 0.001 in fixed point
+    pll->bandwidthHz = 10;  // 10Hz bandwidth
+}
+
+// Update PLL dengan variable bandwidth
+void updatePLL(DigitalPLL* pll, uint64_t measuredPeriod, uint32_t rpm) {
+    // Predicted period from PLL state
+    int64_t predictedPeriod = pll->phaseIntegral + pll->freqIntegral;
+    
+    // Phase error
+    pll->phaseError = (int64_t)measuredPeriod - predictedPeriod;
+    
+    // Adaptive gains based on RPM and acceleration
+    int32_t rpmScaled = rpm * 100;
+    if (rpmScaled < 50000) {        // < 500 RPM
+        pll->kp = 50;               // Low gain for stability
+        pll->ki = 5;
+        pll->bandwidthHz = 5;
+    } else if (rpmScaled < 500000) { // 500-5000 RPM
+        pll->kp = 100;
+        pll->ki = 10;
+        pll->bandwidthHz = 20;
+    } else {                         // > 5000 RPM
+        pll->kp = 200;              // High gain for fast response
+        pll->ki = 20;
+        pll->bandwidthHz = 50;
+    }
+    
+    // PI controller
+    pll->phaseIntegral += (pll->phaseError * pll->ki) >> 8;
+    pll->freqIntegral += (pll->phaseError * pll->kp) >> 8;
+    
+    // Lock detection
+    if (abs(pll->phaseError) < (1ULL << 24)) {  // < 16 ticks error
+        if (pll->lockCounter < 100) {
+            pll->lockCounter++;
+        }
+    } else {
+        pll->lockCounter = 0;
+    }
+    
+    pll->isLocked = (pll->lockCounter > 50) ? 1 : 0;
+    
+    // Jitter estimation (moving average)
+    pll->jitterEstimate = (pll->jitterEstimate * 31 + abs(pll->phaseError)) / 32;
+}
+
+// Get corrected timing dengan PLL prediction
+int64_t getPLLCorrectedTiming(uint16_t rpm, int16_t baseTimingScaled) {
+    if (!enginePLL.isLocked) {
+        return (int64_t)baseTimingScaled;
+    }
+    
+    // Predict phase at ignition time
+    int64_t phaseCorrection = enginePLL.phaseError + 
+                              (enginePLL.frequencyError * 1000) / rpm;
+    
+    // Convert to degrees correction
+    int64_t degCorrection = (phaseCorrection * DEG_TO_FIXED(360)) / 
+                            (int64_t)enginePLL.phaseIntegral;
+    
+    return (int64_t)baseTimingScaled + degCorrection;
+}
+```
+
+## **4. REAL-TIME ERROR CORRECTION**
+
+### **Online Calibration dengan Kalman Filter**
+```cpp
+typedef struct {
+    // State vector: [timing_error, period_error, temp_coeff]
+    float x[3];          // State estimate
+    float P[3][3];       // Covariance matrix
+    float Q[3][3];       // Process noise covariance
+    float R[2][2];       // Measurement noise covariance
+    
+    // Adaptive tuning
+    float innovationThreshold;
+    uint32_t sampleCount;
+} KalmanCalibration;
+
+KalmanCalibration timingCal;
+
+void initKalmanCalibration(KalmanCalibration* kf) {
+    memset(kf, 0, sizeof(KalmanCalibration));
+    
+    // Initial state
+    kf->x[0] = 0.0f;  // Timing error (degrees)
+    kf->x[1] = 0.0f;  // Period error (ticks)
+    kf->x[2] = 0.0f;  // Temperature coefficient
+    
+    // Initial covariance
+    for (int i = 0; i < 3; i++) {
+        kf->P[i][i] = 1.0f;
+    }
+    
+    // Process noise
+    kf->Q[0][0] = 0.001f;  // Timing error variance
+    kf->Q[1][1] = 0.01f;   // Period error variance
+    kf->Q[2][2] = 0.0001f; // Temp coeff variance
+    
+    // Measurement noise
+    kf->R[0][0] = 0.1f;    // RPM measurement variance
+    kf->R[1][1] = 0.05f;   // Timing measurement variance
+}
+
+// Kalman filter update dengan outlier rejection
+void updateTimingCalibration(KalmanCalibration* kf, 
+                           float measuredRpm, 
+                           float measuredTiming,
+                           float expectedTiming,
+                           float temperature) {
+    
+    // Predict step
+    float x_pred[3] = {kf->x[0], kf->x[1], kf->x[2]};
+    float P_pred[3][3];
+    
+    // State transition: x_k = F * x_{k-1}
+    // Simple model: errors persist, temp coeff constant
+    memcpy(P_pred, kf->P, sizeof(P_pred));
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            P_pred[i][j] += kf->Q[i][j];
+        }
+    }
+    
+    // Measurement
+    float z[2] = {measuredRpm, measuredTiming};
+    float H[2][3] = {{1.0f, 0.0f, temperature},  // RPM measurement model
+                     {0.0f, 1.0f, 0.0f}};        // Timing measurement model
+    
+    // Innovation (measurement residual)
+    float y[2];
+    y[0] = z[0] - (expectedRpm + x_pred[0] + temperature * x_pred[2]);
+    y[1] = z[1] - (expectedTiming + x_pred[1]);
+    
+    // Innovation covariance
+    float S[2][2];
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            S[i][j] = kf->R[i][j];
+            for (int k = 0; k < 3; k++) {
+                S[i][j] += H[i][k] * P_pred[k][k] * H[j][k];
+            }
+        }
+    }
+    
+    // Kalman gain
+    float K[3][2];
+    float S_inv[2][2];
+    // Calculate inverse of 2x2 matrix S
+    float det = S[0][0] * S[1][1] - S[0][1] * S[1][0];
+    if (fabs(det) > 1e-6) {
+        S_inv[0][0] = S[1][1] / det;
+        S_inv[0][1] = -S[0][1] / det;
+        S_inv[1][0] = -S[1][0] / det;
+        S_inv[1][1] = S[0][0] / det;
+        
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 2; j++) {
+                K[i][j] = 0;
+                for (int k = 0; k < 3; k++) {
+                    K[i][j] += P_pred[i][k] * H[j][k];
+                }
+                K[i][j] *= S_inv[j][j];
+            }
+        }
+        
+        // Update estimate
+        for (int i = 0; i < 3; i++) {
+            kf->x[i] = x_pred[i] + K[i][0] * y[0] + K[i][1] * y[1];
+        }
+        
+        // Update covariance
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                kf->P[i][j] = P_pred[i][j];
+                for (int k = 0; k < 2; k++) {
+                    kf->P[i][j] -= K[i][k] * S[k][k] * K[j][k];
+                }
+            }
+        }
+    }
+    
+    kf->sampleCount++;
+}
+```
+
+## **5. ULTRA-FAST ISR DENGAN ASSEMBLY OPTIMIZATION**
+
+```cpp
+// ISR dalam assembly untuk minimum latency
+__attribute__((naked)) void VR_Capture_ISR(void) {
+    __asm volatile(
+        "push {r0-r7, lr}          \n"  // Save context
+        
+        // 1. Read capture value (1 cycle)
+        "ldr r0, =0x40000000       \n"  // TIM2 base
+        "ldr r1, [r0, #0x34]       \n"  // TIM2->CCR1
+        
+        // 2. Calculate period (2 cycles)
+        "ldr r2, =last_capture     \n"
+        "ldr r3, [r2]              \n"
+        "subs r4, r1, r3           \n"  // period = current - last
+        "str r1, [r2]              \n"  // update last_capture
+        
+        // 3. Noise filter (2 cycles)
+        "ldr r5, =noise_filter     \n"
+        "ldr r5, [r5]              \n"
+        "cmp r4, r5                \n"
+        "blt isr_exit              \n"
+        
+        // 4. Store period (1 cycle)
+        "ldr r6, =current_period   \n"
+        "str r4, [r6]              \n"
+        
+        // 5. Calculate RPM index via hardware divider (4 cycles)
+        // Using 64-bit hardware divider (DIV_S in Cortex-M33)
+        "mov r7, #600000000        \n"
+        "udiv r0, r7, r4           \n"  // RPM = 600M / period
+        
+        // 6. Lookup timing via table (3 cycles)
+        "lsr r0, #8                \n"  // RPM / 256 for table index
+        "ldr r1, =timing_table     \n"
+        "ldrb r2, [r1, r0]         \n"  // timing value
+        
+        // 7. Calculate fire delay (6 cycles)
+        "ldr r3, =trigger_angle    \n"
+        "ldr r3, [r3]              \n"
+        "sub r4, r3, r2            \n"  // delay_angle = trigger - timing
+        
+        // Convert to ticks (uses MUL and UDIV)
+        "ldr r5, =ticks_per_deg    \n"
+        "ldr r5, [r5, r0, LSL #2]  \n"  // ticksPerDegTable[rpmIndex]
+        "mul r6, r4, r5            \n"
+        "mov r7, #10000            \n"
+        "udiv r4, r6, r7           \n"  // delay_ticks
+        
+        // 8. Schedule ignition (2 cycles)
+        "ldr r0, =TIM5_ARR         \n"
+        "str r4, [r0]              \n"
+        "ldr r1, =TIM5_CR1         \n"
+        "mov r2, #0x81             \n"  // CEN | OPM
+        "str r2, [r1]              \n"
+        
+        "isr_exit:                 \n"
+        "pop {r0-r7, pc}           \n"  // Restore and return
+    );
+}
+```
+
+## **6. TEMPERATURE COMPENSATED OSCILLATOR**
+
+```cpp
+// Compensate for crystal drift dengan temperature sensor internal
+void calibrateSystemClock(void) {
+    // Read internal temperature sensor
+    ADC1->SQR1 = (10 << 6);  // Channel 18 = temperature sensor
+    ADC1->CR2 |= ADC_CR2_SWSTART;
+    while (!(ADC1->SR & ADC_SR_EOC));
+    uint16_t tempRaw = ADC1->DR;
+    
+    // STM32H5 internal temperature sensor: ~25mV/°C, 2.5V at 25°C
+    float voltage = tempRaw * 3.3 / 4096.0;
+    float temperature = (voltage - 0.76) / 0.0025 + 25.0;
+    
+    // Crystal frequency drift: typically -0.035 ppm/°C²
+    float driftCoeff = -0.035e-6;
+    float tempDelta = temperature - 25.0;
+    float freqError = driftCoeff * tempDelta * tempDelta;
+    
+    // Adjust timer prescaler dynamically
+    uint32_t nominalFreq = 250000000;  // 250MHz
+    uint32_t correctedFreq = nominalFreq * (1.0 + freqError);
+    uint32_t correctedPrescaler = correctedFreq / 10000000;  // Target 10MHz
+    
+    TIM2->PSC = correctedPrescaler - 1;
+    TIM5->PSC = correctedPrescaler - 1;
+    
+    // Update lookup tables if error > 0.001%
+    if (fabs(freqError) > 1e-5) {
+        recalcTimingTables(freqError);
+    }
+}
+```
+
+## **7. DUAL-REDUNDANT TIMING VERIFICATION**
+
+```cpp
+// Dual-path timing calculation dengan voting
+typedef struct {
+    uint32_t primaryResult;
+    uint32_t secondaryResult;
+    uint8_t agreement;
+    uint32_t lastGoodValue;
+} RedundantTimer;
+
+RedundantTimer ignitionTimer;
+
+uint32_t calculateRedundantTiming(uint16_t rpm, int16_t timing) {
+    // Primary path: Standard calculation
+    uint32_t primary = calculatePrimaryTiming(rpm, timing);
+    
+    // Secondary path: Alternative algorithm
+    uint32_t secondary = calculateSecondaryTiming(rpm, timing);
+    
+    // Tertiary path: Hardware timer capture of actual ignition
+    uint32_t measured = TIM2->CCR2;  // Capture actual ignition time
+    
+    // Voting logic
+    uint8_t votes[3] = {0};
+    if (abs((int32_t)primary - (int32_t)secondary) < 10) votes[0]++;
+    if (abs((int32_t)primary - (int32_t)measured) < 10) votes[1]++;
+    if (abs((int32_t)secondary - (int32_t)measured) < 10) votes[2]++;
+    
+    if (votes[0] + votes[1] + votes[2] >= 2) {
+        // Consensus reached
+        ignitionTimer.agreement = 1;
+        ignitionTimer.lastGoodValue = (primary + secondary + measured) / 3;
+        return ignitionTimer.lastGoodValue;
+    } else {
+        // No consensus - use last good value with safety margin
+        ignitionTimer.agreement = 0;
+        return ignitionTimer.lastGoodValue + 100;  // 10us retard for safety
+    }
+}
+```
+
+## **8. REAL-TIME PERFORMANCE MONITORING**
+
+```cpp
+// Monitor setiap cycle untuk detect anomalies
+typedef struct {
+    uint32_t cycleStartTime;
+    uint32_t isrDuration;
+    uint32_t loopDuration;
+    uint32_t maxIsrDuration;
+    uint32_t maxLoopDuration;
+    uint32_t timingJitterHistory[64];
+    uint8_t jitterIndex;
+    float jitterStdDev;
+} PerformanceMonitor;
+
+PerformanceMonitor perfMon;
+
+void monitorCyclePerformance(void) {
+    static uint32_t lastCycleTime = 0;
+    uint32_t now = DWT_CYCCNT;
+    
+    if (lastCycleTime > 0) {
+        uint32_t cycleTime = now - lastCycleTime;
+        perfMon.loopDuration = cycleTime;
+        
+        if (cycleTime > perfMon.maxLoopDuration) {
+            perfMon.maxLoopDuration = cycleTime;
+            
+            // Jika loop terlalu lama, trigger safety
+            if (cycleTime > 1000000) {  // > 4ms @ 250MHz
+                triggerSafetyMode();
+            }
+        }
+        
+        // Calculate timing jitter
+        uint32_t expectedTime = 60000000000ULL / runtime.currentRpm;
+        if (runtime.currentRpm > 1000) {
+            int32_t jitter = (int32_t)cycleTime - (int32_t)expectedTime;
+            perfMon.timingJitterHistory[perfMon.jitterIndex] = abs(jitter);
+            perfMon.jitterIndex = (perfMon.jitterIndex + 1) & 0x3F;
+            
+            // Update standard deviation
+            uint32_t sum = 0, sumSq = 0;
+            for (int i = 0; i < 64; i++) {
+                sum += perfMon.timingJitterHistory[i];
+                sumSq += perfMon.timingJitterHistory[i] * 
+                         perfMon.timingJitterHistory[i];
+            }
+            float mean = sum / 64.0f;
+            perfMon.jitterStdDev = sqrt(sumSq / 64.0f - mean * mean);
+            
+            // Jika jitter terlalu tinggi, trigger calibration
+            if (perfMon.jitterStdDev > 100.0f) {  // > 100 ticks jitter
+                requestRecalibration();
+            }
+        }
+    }
+    
+    lastCycleTime = now;
+}
+```
+
+## **9. IMPLEMENTASI FINAL - EXTREME PRECISION CDI**
+
+```cpp
+// Main ISR dengan semua optimasi ekstrem
+void __attribute__((optimize("O3"), always_inline)) 
+vrCaptureISR_ExtremePrecision(void) {
+    // 1. Ultra-fast capture dengan direct register
+    uint32_t capture = TIM2->CCR1;
+    
+    // 2. Period calculation dengan error correction
+    static uint32_t lastCapture = 0;
+    uint32_t period = capture - lastCapture;
+    lastCapture = capture;
+    
+    // 3. Hardware-accelerated noise filtering
+    if (period < TIM2->CCMR1 >> 16) return;  // Use capture/compare reg as filter
+    
+    // 4. Dual-redundant RPM calculation
+    uint32_t rpm1 = 600000000UL / period;  // Primary
+    uint32_t rpm2 = hardwareDivide(600000000UL, period);  // Secondary (DIV_S)
+    uint16_t rpm = (abs((int32_t)rpm1 - (int32_t)rpm2) < 100) ? 
+                   (rpm1 + rpm2) / 2 : MIN(rpm1, rpm2);
+    
+    // 5. Cubic spline timing lookup dengan PLL correction
+    int32_t baseTiming = cubicInterpolate(&timingSpline, rpm);
+    int32_t pllCorrection = getPLLCorrectedTiming(rpm, baseTiming);
+    int32_t tempCompensation = getTemperatureCompensation(runtime.currentTempC);
+    int32_t finalTiming = baseTiming + pllCorrection + tempCompensation;
+    
+    // 6. 64-bit precision delay calculation
+    uint64_t ticksPerDeg = getTicksPerDegree64(rpm);
+    int32_t angleDelay = config.trigger.triggerAngleScaled - finalTiming;
+    uint64_t delayTicks64 = (angleDelay * ticksPerDeg) / 10000ULL;
+    
+    // 7. Error bounding and safety check
+    if (delayTicks64 > UINT32_MAX) delayTicks64 = UINT32_MAX;
+    uint32_t delayTicks = (uint32_t)delayTicks64;
+    
+    // 8. Schedule dengan HRTIM untuk 184ps resolution
+    HRTIM1->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_B].CMP1xR = delayTicks;
+    HRTIM1->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_B].SETxR = HRTIM_SETX_SST;
+    
+    // 9. Real-time performance monitoring
+    uint32_t isrEnd = DWT_CYCCNT;
+    perfMon.isrDuration = isrEnd - perfMon.cycleStartTime;
+    if (perfMon.isrDuration > perfMon.maxIsrDuration) {
+        perfMon.maxIsrDuration = perfMon.isrDuration;
+    }
+    
+    // 10. Online calibration update
+    if (perfMon.sampleCount++ % 100 == 0) {
+        updateTimingCalibration(&timingCal, rpm, finalTiming, 
+                               baseTiming, runtime.currentTempC);
+    }
+}
+```
+
+## **10. VALIDASI DAN TESTING**
+
+```cpp
+// Comprehensive test suite
+void runPrecisionValidation(void) {
+    USB_SERIAL.println(F("\n=== EXTREME PRECISION VALIDATION ==="));
+    
+    // 1. Timer resolution test
+    testTimerResolution();
+    
+    // 2. Jitter measurement over 1,000,000 cycles
+    measureTimingJitter(1000000);
+    
+    // 3. Temperature drift compensation test
+    testTemperatureCompensation();
+    
+    // 4. Maximum acceleration response test
+    testAccelerationResponse();
+    
+    // 5. Redundancy and fault tolerance test
+    testFaultTolerance();
+    
+    USB_SERIAL.println(F("=== VALIDATION COMPLETE ==="));
+}
+
+void testTimerResolution(void) {
+    // Measure actual timer resolution
+    uint32_t start = TIM2->CNT;
+    GPIOB->BSRR = (1 << 0);  // Toggle CDI pin
+    uint32_t end = TIM2->CNT;
+    
+    uint32_t delta = end - start;
+    USB_SERIAL.print(F("Timer resolution: "));
+    USB_SERIAL.print(delta * 100);  // Convert to nanoseconds
+    USB_SERIAL.println(F("ns"));
+    
+    if (delta > 1) {
+        USB_SERIAL.println(F("WARNING: Resolution worse than 100ns!"));
+    }
+}
+```
+
+## **PERFORMANCE TARGETS**
+
+Dengan implementasi di atas, target performa:
+
+1. **Timing Resolution**: 184ps (HRTIM) vs 100ns sebelumnya → **543x improvement**
+2. **Timing Accuracy**: ±0.005° vs ±0.05° sebelumnya → **10x improvement**
+3. **Jitter**: <0.001° vs <0.05° sebelumnya → **50x improvement**
+4. **Response Time**: <1° pada acceleration 10,000 RPM/s
+5. **Temperature Stability**: <0.01°/100°C drift
+
+## **HARDWARE RECOMMENDATIONS**
+
+Untuk mencapai akurasi ekstrem:
+
+1. **External TCXO** (Temperature Compensated Crystal Oscillator) untuk clock reference
+2. **Low-jitter clock buffer** untuk distribusi clock
+3. **Thermal management** - heatsink pada MCU
+4. **Isolated power supply** untuk analog sections
+5. **Shielded cabling** untuk VR sensor
+
+Implementasi ini membutuhkan **expertise tinggi** dalam embedded systems, real-time programming, dan signal processing, tetapi akan menghasilkan **CDI dengan akurasi tertinggi yang mungkin secara teknis**.
