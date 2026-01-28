@@ -49,7 +49,17 @@ current_data = {
     'phaseCorr': 0,     # Phase correction in ticks (±50 max)
     'predictiveMode': False,  # Predictive ignition active (timing > trigger angle)
     'timingClamped': False,   # Timing was clamped to min/max
-    'skippedTriggers': 0      # Race condition skip counter (diagnostic)
+    'skippedTriggers': 0,     # Race condition skip counter (diagnostic)
+    # Calibration data
+    'calMode': 0,             # 0=off, 1=running, 2=paused, 3=complete
+    'calRpmIdx': 0,           # Current RPM index (0-80)
+    'calTimingDeg': 0,        # Current timing degree (0-60)
+    'calMisfires': 0,         # Total misfires
+    'calIteration': 0,        # Current iteration
+    'calTriggers': 0,         # Debug: triggers sent
+    'calIgnitions': 0,        # Debug: ignitions fired
+    'calCaptures': 0,         # Debug: captures detected
+    'calRawExti': 0           # Debug: raw EXTI count (always)
 }
 
 def list_serial_ports():
@@ -116,6 +126,23 @@ def parse_rt_data(line):
                     flags2 = int(parts[21])
                     current_data['timingClamped'] = bool(flags2 & 0x01)
                     current_data['skippedTriggers'] = int(parts[22])
+                # Calibration data (indices 23-31)
+                if len(parts) >= 28:
+                    current_data['calMode'] = int(parts[23])          # 0=off, 1=running, 2=paused, 3=complete
+                    current_data['calRpmIdx'] = int(parts[24])        # 0-80
+                    current_data['calTimingDeg'] = int(parts[25])     # 0-60
+                    current_data['calMisfires'] = int(parts[26])      # Total misfires
+                    current_data['calIteration'] = int(parts[27])     # Current iteration
+                # Debug counters (indices 28-31)
+                if len(parts) >= 32:
+                    current_data['calTriggers'] = int(parts[28])      # Debug: triggers sent
+                    current_data['calIgnitions'] = int(parts[29])     # Debug: ignitions fired
+                    current_data['calCaptures'] = int(parts[30])      # Debug: captures detected
+                    current_data['calRawExti'] = int(parts[31])       # Debug: raw EXTI count
+                elif len(parts) >= 31:
+                    current_data['calTriggers'] = int(parts[28])
+                    current_data['calIgnitions'] = int(parts[29])
+                    current_data['calCaptures'] = int(parts[30])
                 return True
     except:
         pass

@@ -20,14 +20,19 @@ struct ADCCalibration;
 struct CrankingConfig;
 struct WarningConfig;
 struct QuickShifterConfig;
+struct CalibrationConfig;
+struct CalibrationData;
 struct CDIConfig;
 struct RuntimeData;
+struct CalibrationState;
 struct FlashDefaults;
 
 // Function prototypes that use structs
 uint32_t calculateChecksum(struct CDIConfig* cfg);
 bool validateConfig(struct CDIConfig* cfg);
 uint32_t calculateFlashChecksum(struct FlashDefaults* fd);
+uint32_t calculateCalChecksum(struct CalibrationData* cd);
+bool validateCalData(struct CalibrationData* cd);
 
 // ============================================================================
 // PRECISION CONFIGURATION
@@ -93,6 +98,11 @@ uint32_t calculateFlashChecksum(struct FlashDefaults* fd);
 #define PIN_ADC_HEAD_TEMP   PC0   // Head/cylinder temperature
 #define PIN_ADC_BATTERY     PC1   // Battery voltage
 #define PIN_ADC_CHARGING    PC2   // Charging voltage
+
+// Calibration pins (self-test mode) - SEPARATE from CDI pins!
+#define PIN_CAL_RPM_OUT     PB_8   // RPM generator output (TIM16_CH1) - jumper to PA0
+#define PIN_CAL_IGN_CAP     PB_3   // Ignition capture input (polling) - jumper from PB0
+// Note: PB3 is on P2 Left header, dedicated for calibration only
 
 // SD Card - using SDMMC interface (no CS pin needed)
 // SDMMC pins are fixed by hardware:
@@ -199,6 +209,71 @@ uint32_t calculateFlashChecksum(struct FlashDefaults* fd);
 #define DEBUG_CPU_USAGE
 
 // ============================================================================
+// CALIBRATION CONSTANTS - 2D Map with Fuzzy Logic (0.01° precision)
+// ============================================================================
+
+// Calibration table dimensions
+#define CAL_TIMING_POINTS   61    // 0°, 1°, 2°, ... 60° BTDC
+#define CAL_RPM_POINTS      81    // 0, 250, 500, ... 20000 RPM
+#define CAL_TOTAL_POINTS    (CAL_RPM_POINTS * CAL_TIMING_POINTS)  // 4941 points
+
+// Magic number and version for calibration file
+#define CAL_MAGIC           0xCA12D002
+#define CAL_VERSION         2
+
+// Calibration modes
+#define CAL_MODE_OFF        0   // Normal operation
+#define CAL_MODE_RUNNING    1   // Calibration in progress
+#define CAL_MODE_PAUSED     2   // Paused by user
+#define CAL_MODE_COMPLETE   3   // All points calibrated
+
+// Precision settings
+// Internal: 0.001° (millidegrees) for fuzzy calculations
+// Storage: 0.01° (centidegrees) in int16_t
+#define CAL_INTERNAL_SCALE  1000  // 1° = 1000 millidegrees
+#define CAL_STORAGE_SCALE   100   // 1° = 100 centidegrees
+
+// Fuzzy logic thresholds (in millidegrees = 0.001°)
+#define FUZZY_HUGE_THRESH   5000  // > 5.0° error
+#define FUZZY_LARGE_THRESH  2000  // > 2.0° error
+#define FUZZY_MEDIUM_THRESH 500   // > 0.5° error
+#define FUZZY_SMALL_THRESH  100   // > 0.1° error
+#define FUZZY_TINY_THRESH   10    // > 0.01° error
+
+// Fuzzy step sizes (in millidegrees = 0.001°)
+#define FUZZY_STEP_HUGE     1000  // 1.000° step
+#define FUZZY_STEP_LARGE    500   // 0.500° step
+#define FUZZY_STEP_MEDIUM   100   // 0.100° step
+#define FUZZY_STEP_SMALL    10    // 0.010° step
+#define FUZZY_STEP_TINY     1     // 0.001° step (minimum)
+
+// Convergence settings
+#define CAL_MAX_ITERATIONS  50    // Max iterations per point
+#define CAL_CONVERGE_COUNT  5     // Must be stable for N consecutive checks
+#define CAL_SAMPLES_PER_CHECK 10  // Samples per convergence check
+#define CAL_DEFAULT_MARGIN  5     // Default margin: 0.05° (in 0.01° units)
+
+// Misfire detection settings
+#define CAL_MISFIRE_TIMEOUT_TRIGGERS 5   // Misfires if no capture after N triggers
+#define CAL_MISFIRE_MAX_PER_POINT    10  // Max misfires before marking point failed
+#define CAL_MISFIRE_RETRY_DELAY_MS   50  // Delay before retry after misfire
+#define CAL_MISFIRE_SAFETY_RETARD    200 // Safety retard: 2.00° (in 0.01° units) for misfire-prone points
+
+// RPM sweep parameters
+#define CAL_RPM_START       500   // Start RPM
+#define CAL_RPM_END         15000 // End RPM (practical limit for calibration)
+#define CAL_RPM_HOLD_MS     150   // Hold time at each RPM point
+#define CAL_SETTLE_MS       50    // Settle time after RPM change
+
+// Timer definitions
+#define TIM_CAL_RPM         TIM16
+// TIM_CAL_IGN removed - using EXTI interrupt instead
+
+// File paths
+#define CAL_FILE_BIN        "racing-cdi/calibration.bin"
+#define CAL_FILE_TXT        "racing-cdi/calibration.txt"
+
+// ============================================================================
 // CPU/RAM MONITORING - ACCURATE MEASUREMENT USING DWT CYCLE COUNTER
 // ============================================================================
 
@@ -252,13 +327,13 @@ void initDWT(void) { }  // No-op when disabled
 void initWatchdog(void) {
   // Enable IWDG with safe timeout
   // STM32H5: LSI = 32kHz, Prescaler /256 (PR=6) -> 125Hz tick
-  // Timeout = RLR / 125 = 500/125 = 4 seconds (safer during init)
+  // Timeout = RLR / 125 seconds
 
   IWDG->KR = 0xCCCC;  // Start watchdog (cannot be stopped after this!)
   IWDG->KR = 0x5555;  // Enable write access to PR, RLR
 
-  IWDG->PR = 6;       // Prescaler /256 (safer, slower tick)
-  IWDG->RLR = 100;    // Reload value for ~0.8s timeout
+  IWDG->PR = 6;       // Prescaler /256 (slower tick)
+  IWDG->RLR = 250;    // Reload value for ~2.0s timeout (250/125 = 2s)
 
   // Wait for registers to update with timeout
   uint32_t timeout = 100000;
@@ -504,6 +579,44 @@ struct __attribute__((aligned(4))) QuickShifterConfig {
   uint8_t cutTimeMap[QS_TABLE_SIZE];
 };
 
+// Calibration settings (minimal, stored in CDIConfig)
+// Full calibration data stored separately in calibration.bin
+struct __attribute__((aligned(4))) CalibrationConfig {
+  uint8_t enabled;              // 0=off, 1=use calibration offsets
+  uint8_t marginError;          // Allowed error margin in 0.01° units (default 5 = 0.05°)
+  uint8_t complete;             // 1 = calibration data loaded and valid
+  uint8_t reserved;
+};
+
+// ============================================================================
+// 2D CALIBRATION DATA STRUCTURE (Stored in separate file: calibration.bin)
+// Total size: ~10.5 KB
+// ============================================================================
+struct __attribute__((aligned(4))) CalibrationData {
+  uint32_t magic;               // CAL_MAGIC (0xCA12D002)
+  uint8_t version;              // CAL_VERSION
+  uint8_t enabled;              // Copy of config enabled flag
+  uint8_t marginError;          // Margin in 0.01° units
+  uint8_t complete;             // All points calibrated
+
+  // 2D offset map: [RPM index 0-80][Timing degree 0-60]
+  // Storage: 0.01° (centidegrees) per unit
+  // Range: -327.67° to +327.67° (way more than needed)
+  // Actual expected range: ±10°
+  int16_t offsets[CAL_RPM_POINTS][CAL_TIMING_POINTS];  // 81 × 61 × 2 = 9,882 bytes
+
+  // Calibration quality bitmap: 1 bit per point
+  // Bit set = point successfully calibrated within margin
+  uint8_t calibrated[CAL_RPM_POINTS][(CAL_TIMING_POINTS + 7) / 8];  // 81 × 8 = 648 bytes
+
+  // Misfire-prone bitmap: 1 bit per point
+  // Bit set = point had misfires during calibration (apply safety retard)
+  uint8_t misfireProne[CAL_RPM_POINTS][(CAL_TIMING_POINTS + 7) / 8];  // 81 × 8 = 648 bytes
+
+  uint32_t checksum;
+};
+// sizeof(CalibrationData) ≈ 10,540 bytes
+
 // Main configuration - all timing values in scaled format (x100)
 struct __attribute__((aligned(4))) CDIConfig {
   uint32_t magic;
@@ -523,6 +636,7 @@ struct __attribute__((aligned(4))) CDIConfig {
   CrankingConfig cranking;
   WarningConfig warning;
   QuickShifterConfig quickShifter;
+  CalibrationConfig calibration;
 
   uint16_t peakRpm;
   uint16_t reserved1;
@@ -627,6 +741,70 @@ struct __attribute__((aligned(4))) RuntimeData {
   volatile int16_t dRpm;                  // RPM change rate (RPM per cycle)
 };
 
+// Calibration runtime state with Fuzzy Logic support
+struct __attribute__((aligned(4))) CalibrationState {
+  // === MODE AND POSITION ===
+  volatile uint8_t mode;                  // CAL_MODE_OFF, CAL_MODE_RUNNING, etc.
+  volatile uint8_t currentTimingDeg;      // Current timing degree (0-60)
+  volatile uint8_t currentRpmIdx;         // Current RPM index (0-80)
+  volatile uint8_t phase;                 // 0=accel sweep, 1=done with this timing
+
+  // === RPM GENERATOR STATE ===
+  volatile uint32_t rpmPeriodTicks;       // Current half-period for TIM16 output
+  volatile uint16_t targetRpm;            // Target RPM for generator
+  volatile uint8_t rpmStable;             // RPM has stabilized
+
+  // === IGNITION CAPTURE STATE ===
+  volatile uint32_t triggerTime;          // When trigger was sent (timer ticks)
+  volatile uint32_t captureTime;          // When ignition was captured
+  volatile uint32_t capturedDelay;        // Delay from trigger to ignition (ticks)
+  volatile uint8_t captureReady;          // New capture available
+
+  // === FUZZY LOGIC CONVERGENCE STATE ===
+  volatile int32_t accumulatedOffset;     // In millidegrees (0.001°) for precision
+  volatile int32_t lastErrors[5];         // Error history for convergence check
+  volatile uint8_t errorHistoryIdx;       // Circular buffer index
+  volatile uint8_t iteration;             // Current iteration at this point
+  volatile uint8_t convergedCount;        // Consecutive stable measurements
+
+  // === MEASUREMENT ACCUMULATOR ===
+  volatile int32_t sampleSum;             // Sum of error samples (millidegrees)
+  volatile uint8_t sampleCount;           // Number of samples collected
+  volatile int32_t lastAvgError;          // Last calculated average error
+
+  // === STATISTICS ===
+  volatile uint32_t totalPoints;          // Total points (4941)
+  volatile uint32_t completedPoints;      // Points completed
+  volatile uint32_t passedPoints;         // Points within margin
+  volatile uint32_t failedPoints;         // Points that hit max iterations
+  volatile uint32_t totalSamples;         // Total samples collected
+
+  // === MISFIRE DETECTION ===
+  volatile uint32_t triggersSent;         // Triggers sent since last capture
+  volatile uint32_t lastTriggerMs;        // When last trigger was sent
+  volatile uint32_t misfireCount;         // Misfires at current point
+  volatile uint32_t totalMisfires;        // Total misfires across all points
+  volatile uint32_t misfirePoints;        // Points with excessive misfires
+
+  // === TIMING ===
+  volatile uint32_t lastStateChangeMs;    // For state machine timing
+  volatile uint32_t pointStartMs;         // When current point started
+  volatile uint32_t settleStartMs;        // When RPM settle started
+
+  // === OVERRIDE FLAG ===
+  volatile uint8_t overrideTimingEnabled; // 1 = override map timing with target
+  volatile int16_t overrideTimingScaled;  // Target timing in 0.01° units
+
+  // === CAPTURE POLLING (main loop, NOT ISR) ===
+  volatile uint8_t waitingForCapture;     // 1 = waiting for ignition capture
+  volatile uint8_t lastPb3State;          // Previous PB3 state for edge detection
+
+  // === DEBUG ===
+  volatile uint32_t debugCaptureCount;    // Count of EXTI captures (for debug)
+  volatile uint32_t debugTriggerCount;    // Count of triggers sent (for debug)
+  volatile uint32_t debugRawExtiCount;    // Count of ALL EXTI fires (even when not calibrating)
+};
+
 // ============================================================================
 // DEFAULT SAFETY MAP - Conservative timing for failsafe
 // ============================================================================
@@ -657,6 +835,11 @@ static const int8_t DEFAULT_SAFETY_MAP[RPM_TABLE_SIZE] = {
 
 static CDIConfig config __attribute__((aligned(4)));
 static RuntimeData runtime __attribute__((aligned(4)));
+static CalibrationState calState __attribute__((aligned(4)));
+static CalibrationData calData __attribute__((aligned(4)));  // ~10.5KB - 2D calibration map
+
+// Calibration data loaded flag (separate from calData.complete)
+static uint8_t calDataLoaded = 0;
 
 // Timer pointers
 static TIM_TypeDef* TIM_CAPTURE = TIM2;   // 32-bit timer for input capture
@@ -696,6 +879,15 @@ static uint8_t binaryTelemetryMode = 0;
 #define FLASH_USER_START_ADDR   0x0807E000UL                  // Last 8KB of Bank 1 (504-512KB)
 #define FLASH_DEFAULTS_MAGIC    0xCDF1A533UL                  // Magic v4 - checksum at end of struct
 #define FLASH_DEFAULTS_VERSION  3                             // Version 3 = settings + map
+
+// Flash Calibration Storage - Uses sectors 61-62 (16KB) for ~10.5KB CalibrationData
+// Sector 61: 0x0807A000 - 0x0807BFFF (8KB)
+// Sector 62: 0x0807C000 - 0x0807DFFF (8KB)
+#define FLASH_CAL_SECTOR_1      61
+#define FLASH_CAL_SECTOR_2      62
+#define FLASH_CAL_START_ADDR    0x0807A000UL                  // 16KB for calibration (sectors 61-62)
+#define FLASH_CAL_MAGIC         0xCA1F1A55UL                  // Magic for Flash calibration
+#define FLASH_CAL_VERSION       1
 
 // Flags to indicate what's stored in Flash (can be combined)
 #define FLASH_HAS_SETTINGS      0x01  // Basic settings (trigger, limiter, warning, etc)
@@ -1263,6 +1455,203 @@ bool clearDefaultsFromFlash(void) {
 }
 
 // ============================================================================
+// FLASH CALIBRATION STORAGE - Backup for SD Card failure
+// ============================================================================
+
+// Config source tracking
+#define CAL_SOURCE_SD       0   // Loaded from SD card
+#define CAL_SOURCE_FLASH    1   // Loaded from Flash backup
+#define CAL_SOURCE_DEFAULT  2   // Using hardcoded defaults (all zeros)
+
+static uint8_t calSource = CAL_SOURCE_DEFAULT;
+
+// Initialize calibration data with hardcoded defaults (all zeros)
+void initHardcodedCalibration(void) {
+  memset(&calData, 0, sizeof(CalibrationData));
+  calData.magic = CAL_MAGIC;
+  calData.version = CAL_VERSION;
+  calData.enabled = 0;
+  calData.marginError = CAL_DEFAULT_MARGIN;
+  calData.complete = 0;
+  // All offsets are already 0 from memset
+  // All calibrated bitmap bits are 0 (uncalibrated)
+  // All misfireProne bitmap bits are 0 (no misfires)
+  calData.checksum = calculateCalChecksum(&calData);
+  calDataLoaded = 1;  // Mark as loaded (defaults are valid)
+  calSource = CAL_SOURCE_DEFAULT;
+}
+
+// Check if Flash calibration is valid
+bool hasFlashCalibration(void) {
+  if (!flashAccessible) return false;
+
+  volatile uint32_t* magic = (volatile uint32_t*)FLASH_CAL_START_ADDR;
+  if (*magic != FLASH_CAL_MAGIC) return false;
+
+  // Verify checksum
+  volatile CalibrationData* fcd = (volatile CalibrationData*)FLASH_CAL_START_ADDR;
+
+  // Calculate checksum using volatile read
+  uint32_t sum = 0;
+  volatile uint8_t* ptr = (volatile uint8_t*)fcd;
+  for (size_t i = 0; i < sizeof(CalibrationData) - sizeof(uint32_t); i++) {
+    sum += ptr[i];
+  }
+  uint32_t calcChecksum = sum ^ CAL_MAGIC;
+
+  return (calcChecksum == fcd->checksum);
+}
+
+// Load calibration from Flash
+bool loadCalibrationFromFlash(void) {
+  if (!hasFlashCalibration()) {
+    return false;
+  }
+
+  // Copy from Flash to RAM using volatile-safe copy
+  copyFromFlash(&calData, (volatile void*)FLASH_CAL_START_ADDR, sizeof(CalibrationData));
+
+  // Verify after copy
+  if (!validateCalData(&calData)) {
+    return false;
+  }
+
+  calDataLoaded = 1;
+  calSource = CAL_SOURCE_FLASH;
+  return true;
+}
+
+// Save calibration to Flash (erases 2 sectors)
+bool saveCalibrationToFlash(void) {
+  if (runtime.currentRpm >= 100) {
+    USB_SERIAL.println(F("FLASHCAL:BUSY"));
+    return false;
+  }
+
+  // Update checksum before saving
+  calData.checksum = calculateCalChecksum(&calData);
+
+  __disable_irq();
+  HAL_FLASH_Unlock();
+
+  // Erase sector 61
+  FLASH_EraseInitTypeDef eraseInit;
+  uint32_t sectorError = 0;
+  eraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
+  eraseInit.Banks = FLASH_BANK_1;
+  eraseInit.Sector = FLASH_CAL_SECTOR_1;
+  eraseInit.NbSectors = 1;
+
+  HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+  if (status != HAL_OK) {
+    HAL_FLASH_Lock();
+    __enable_irq();
+    USB_SERIAL.println(F("FLASHCAL:ERASE1_FAIL"));
+    return false;
+  }
+
+  // Erase sector 62
+  eraseInit.Sector = FLASH_CAL_SECTOR_2;
+  status = HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+  if (status != HAL_OK) {
+    HAL_FLASH_Lock();
+    __enable_irq();
+    USB_SERIAL.println(F("FLASHCAL:ERASE2_FAIL"));
+    return false;
+  }
+
+  // Write data in 16-byte QUADWORD chunks (required for STM32H5)
+  uint32_t dest = FLASH_CAL_START_ADDR;
+  size_t writeSize = ((sizeof(CalibrationData) + 15) / 16) * 16;
+
+  // Use aligned buffer for Flash write
+  __attribute__((aligned(16))) uint8_t alignedBuf[16];
+
+  for (size_t offset = 0; offset < writeSize; offset += 16) {
+    // Copy 16 bytes to aligned buffer
+    memset(alignedBuf, 0xFF, 16);  // Fill with 0xFF (erased state)
+    size_t copyLen = (offset + 16 <= sizeof(CalibrationData)) ? 16 : (sizeof(CalibrationData) - offset);
+    if (copyLen > 0 && offset < sizeof(CalibrationData)) {
+      memcpy(alignedBuf, ((uint8_t*)&calData) + offset, copyLen);
+    }
+
+    status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_QUADWORD, dest + offset, (uint32_t)alignedBuf);
+    if (status != HAL_OK) {
+      HAL_FLASH_Lock();
+      __enable_irq();
+      USB_SERIAL.print(F("FLASHCAL:WRITE_FAIL,"));
+      USB_SERIAL.println(offset);
+      return false;
+    }
+  }
+
+  HAL_FLASH_Lock();
+  __enable_irq();
+
+  // Verify
+  if (!hasFlashCalibration()) {
+    USB_SERIAL.println(F("FLASHCAL:VERIFY_FAIL"));
+    return false;
+  }
+
+  USB_SERIAL.print(F("FLASHCAL:SAVED,"));
+  USB_SERIAL.print(sizeof(CalibrationData));
+  USB_SERIAL.println(F(" bytes"));
+  return true;
+}
+
+// Clear calibration from Flash
+bool clearCalibrationFromFlash(void) {
+  if (runtime.currentRpm >= 100) {
+    USB_SERIAL.println(F("FLASHCAL:BUSY"));
+    return false;
+  }
+
+  __disable_irq();
+  HAL_FLASH_Unlock();
+
+  // Erase both sectors
+  FLASH_EraseInitTypeDef eraseInit;
+  uint32_t sectorError = 0;
+  eraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
+  eraseInit.Banks = FLASH_BANK_1;
+  eraseInit.Sector = FLASH_CAL_SECTOR_1;
+  eraseInit.NbSectors = 1;
+
+  HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+  if (status != HAL_OK) {
+    HAL_FLASH_Lock();
+    __enable_irq();
+    USB_SERIAL.println(F("FLASHCAL:CLEAR_FAIL"));
+    return false;
+  }
+
+  eraseInit.Sector = FLASH_CAL_SECTOR_2;
+  status = HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+
+  HAL_FLASH_Lock();
+  __enable_irq();
+
+  if (status != HAL_OK) {
+    USB_SERIAL.println(F("FLASHCAL:CLEAR_FAIL"));
+    return false;
+  }
+
+  USB_SERIAL.println(F("FLASHCAL:CLEARED"));
+  return true;
+}
+
+// Get calibration source name
+const char* getCalSourceName(void) {
+  switch (calSource) {
+    case CAL_SOURCE_SD: return "SD";
+    case CAL_SOURCE_FLASH: return "Flash";
+    case CAL_SOURCE_DEFAULT: return "Default";
+    default: return "Unknown";
+  }
+}
+
+// ============================================================================
 // LOOKUP TABLES FOR ISR SPEED (NO DIVISION IN ISR)
 // ============================================================================
 
@@ -1484,6 +1873,8 @@ static inline uint8_t shouldCutByPeriod(uint32_t period) {
 HardwareTimer *TimerCapture;
 HardwareTimer *TimerIgnition;
 HardwareTimer *TimerPulse;      // For CDI pulse width (non-blocking)
+HardwareTimer *TimerCalRpm;     // TIM16 for calibration RPM output
+// TimerCalIgn removed - using polling on PB3 instead of TIM17
 
 // CDI Pulse end callback - turns off CDI output after pulse duration
 // This replaces the blocking NOP loop for better system responsiveness
@@ -1668,8 +2059,14 @@ void vrCaptureCallback(void) {
     return;
   }
 
-  // Skip if quick shifter cut active
-  if (runtime.qsActive) {
+  // =========================================================================
+  // CALIBRATION MODE: Bypass all limiters and cuts
+  // During calibration, we need EVERY trigger to fire at exact timing
+  // =========================================================================
+  bool inCalibrationMode = (calState.mode == CAL_MODE_RUNNING && calState.overrideTimingEnabled);
+
+  // Skip if quick shifter cut active (UNLESS in calibration mode)
+  if (runtime.qsActive && !inCalibrationMode) {
     runtime.cutCount++;
     runtime.lastCycleWasCut = 1;
     // CRITICAL FIX: Toggle 4-stroke cycle to maintain sync during QS cut
@@ -1680,8 +2077,8 @@ void vrCaptureCallback(void) {
     return;
   }
 
-  // Rev limiter check using period (faster than RPM division)
-  if (shouldCutByPeriod(period)) {
+  // Rev limiter check using period (UNLESS in calibration mode)
+  if (!inCalibrationMode && shouldCutByPeriod(period)) {
     runtime.cutCount++;
     runtime.lastCycleWasCut = 1;  // Track for scope display
     // Still toggle 4-stroke cycle
@@ -1736,6 +2133,7 @@ void vrCaptureCallback(void) {
   // dRPM COMPENSATION - Predictive Ignition (Expert Review Optimization)
   // Anticipate RPM change during acceleration for sharper response
   // advance_effective = advance_map + k * dRPM
+  // DISABLED during calibration - we need exact timing
   // =========================================================================
   // Calculate dRPM using period difference (no division needed)
   // If period decreases (dPeriod negative), RPM is increasing
@@ -1748,9 +2146,11 @@ void vrCaptureCallback(void) {
     int16_t dRpm = (int16_t)approxRpm - (int16_t)runtime.prevRpm;
     runtime.dRpm = dRpm;
 
-    // Only apply compensation if RPM > 4000 (stable operation)
-    // and not in limiter (limiter handles its own timing)
-    if (approxRpm > 4000 && runtime.limiterStage == LIMITER_NONE) {
+    // Only apply compensation if:
+    // - RPM > 4000 (stable operation)
+    // - Not in limiter (limiter handles its own timing)
+    // - NOT in calibration mode (need exact timing)
+    if (approxRpm > 4000 && runtime.limiterStage == LIMITER_NONE && !inCalibrationMode) {
       // Compensation: k * dRPM, where k ≈ 0.002 (1/512)
       // At dRPM = +500 (fast accel): compensation ≈ +1° (100 scaled)
       // Positive dRPM (accel) → advance more (positive compensation)
@@ -1768,8 +2168,16 @@ void vrCaptureCallback(void) {
     runtime.prevRpm = rpmIndex * RPM_STEP;
   }
 
+  // =========================================================================
+  // CALIBRATION OVERRIDE - Use target timing during calibration
+  // This ensures CDI fires at exact calibration target angle, not map timing
+  // =========================================================================
+  if (calState.overrideTimingEnabled && calState.mode == CAL_MODE_RUNNING) {
+    // During calibration, use the exact target timing (no map lookup)
+    runtime.currentTimingScaled = calState.overrideTimingScaled;
+  }
   // Cranking mode check (low index = low RPM)
-  if (config.cranking.enabled && rpmIndex <= (config.cranking.maxRpm / RPM_STEP)) {
+  else if (config.cranking.enabled && rpmIndex <= (config.cranking.maxRpm / RPM_STEP)) {
     runtime.currentTimingScaled = config.cranking.timingScaled * DEG_SCALE;
   } else {
     // Get timing from lookup table (NO DIVISION, NO INTERPOLATION)
@@ -1782,10 +2190,14 @@ void vrCaptureCallback(void) {
   // runtime.timingClamped = (timingScaled < TIMING_MIN_SCALED || timingScaled > TIMING_MAX_SCALED) ? 1 : 0;
 
   // Apply dRPM compensation (add advance during acceleration)
-  timingScaled += dRpmCompensation;
+  // Skip during calibration - timing is already exact
+  if (!inCalibrationMode) {
+    timingScaled += dRpmCompensation;
+  }
 
   // Apply soft limiter timing retard (more gentle than cut)
-  if (runtime.limiterStage == LIMITER_SOFT) {
+  // Skip during calibration - we need exact timing
+  if (runtime.limiterStage == LIMITER_SOFT && !inCalibrationMode) {
     timingScaled -= SOFT_RETARD_SCALED;  // Retard by 5 degrees
   }
 
@@ -1796,6 +2208,39 @@ void vrCaptureCallback(void) {
   if (timingScaled > TIMING_MAX_SCALED) {
     timingScaled = TIMING_MAX_SCALED;  // Clamp to maximum (60°)
   }
+
+  // Apply 2D calibration offset if enabled (RPM × Timing interpolation)
+  // calData.offsets are in 0.01° units (centidegrees), same as timingScaled
+  // Uses bilinear interpolation for maximum precision
+  // NOTE: Works with partial calibration too - uncalibrated points use fallback/interpolation
+  // SKIP during calibration - don't apply old calibration while running new calibration
+  if (config.calibration.enabled && calDataLoaded && calData.magic == CAL_MAGIC && !inCalibrationMode) {
+    // Get approximate RPM from index (avoids division in ISR)
+    uint16_t approxRpmForCal = rpmIndex * RPM_STEP;
+
+    // Get interpolated offset from 2D calibration map
+    // Input: rpm, timingScaled (0.01° units)
+    // Output: offset in 0.01° units
+    // For uncalibrated points, uses spiral search to find nearest calibrated point
+    int16_t calOffset = getCalibrationOffsetInterpolated(approxRpmForCal, timingScaled);
+
+    // Apply offset (already in same scale as timingScaled)
+    timingScaled += calOffset;
+
+    // Re-clamp after calibration offset
+    if (timingScaled < TIMING_MIN_SCALED) timingScaled = TIMING_MIN_SCALED;
+    if (timingScaled > TIMING_MAX_SCALED) timingScaled = TIMING_MAX_SCALED;
+
+    // Apply additional safety retard for misfire-prone points
+    // These points had misfires during calibration, so we back off timing for safety
+    uint8_t timingDegForMisfire = (timingScaled > 0) ? (timingScaled / 100) : 0;
+    if (timingDegForMisfire < CAL_TIMING_POINTS &&
+        isPointMisfireProne(rpmIndex, timingDegForMisfire)) {
+      timingScaled -= CAL_MISFIRE_SAFETY_RETARD;  // Retard by 2° for safety
+      if (timingScaled < TIMING_MIN_SCALED) timingScaled = TIMING_MIN_SCALED;
+    }
+  }
+
   runtime.currentTimingScaled = timingScaled;  // Update for display
 
   // Calculate delay in timer ticks
@@ -2033,6 +2478,489 @@ void updateTriggerEdge(void) {
 }
 
 // ============================================================================
+// FUZZY LOGIC ENGINE FOR CALIBRATION
+// ============================================================================
+
+// Triangular membership function
+// Returns 0-1000 (0.0 to 1.0 scaled by 1000) for value position in triangle (a, b, c)
+int32_t triangularMembership(int32_t value, int32_t a, int32_t b, int32_t c) {
+  if (value <= a || value >= c) return 0;
+  if (value <= b) return ((value - a) * 1000) / (b - a);
+  return ((c - value) * 1000) / (c - b);
+}
+
+// Trapezoidal membership for edge cases
+// Returns 0-1000 (0.0 to 1.0 scaled by 1000)
+int32_t trapezoidalMembership(int32_t value, int32_t a, int32_t b, int32_t c, int32_t d) {
+  if (value <= a || value >= d) return 0;
+  if (value >= b && value <= c) return 1000;
+  if (value < b) return ((value - a) * 1000) / (b - a);
+  return ((d - value) * 1000) / (d - c);
+}
+
+// Calculate fuzzy adjustment based on error magnitude
+// Input: error in millidegrees (0.001°)
+// Output: adjustment in millidegrees (0.001°)
+int32_t fuzzyCalibrationAdjust(int32_t errorMilliDeg) {
+  if (errorMilliDeg == 0) return 0;
+
+  int32_t absError = abs(errorMilliDeg);
+
+  // Calculate membership values for each error category (0-1000 scale)
+  // Using overlapping triangular/trapezoidal functions for smooth transitions
+  int32_t muHuge   = trapezoidalMembership(absError, 3000, 5000, 100000, 100001);
+  int32_t muLarge  = triangularMembership(absError, 1000, 3000, 5000);
+  int32_t muMedium = triangularMembership(absError, 200, 750, 2000);
+  int32_t muSmall  = triangularMembership(absError, 30, 150, 500);
+  int32_t muTiny   = triangularMembership(absError, 3, 15, 100);
+  int32_t muMicro  = trapezoidalMembership(absError, 0, 0, 5, 20);
+
+  // Defuzzification: weighted average (centroid method)
+  int32_t sumWeight = muHuge + muLarge + muMedium + muSmall + muTiny + muMicro;
+
+  if (sumWeight < 10) {
+    // No significant membership, use minimum step
+    return (errorMilliDeg > 0) ? -1 : 1;
+  }
+
+  // Calculate weighted step size
+  int32_t weightedSum = (
+    muHuge   * FUZZY_STEP_HUGE +
+    muLarge  * FUZZY_STEP_LARGE +
+    muMedium * FUZZY_STEP_MEDIUM +
+    muSmall  * FUZZY_STEP_SMALL +
+    muTiny   * FUZZY_STEP_TINY +
+    muMicro  * FUZZY_STEP_TINY
+  );
+
+  int32_t adjustment = weightedSum / sumWeight;
+
+  // Apply adaptive gain based on error magnitude
+  // Larger errors get more aggressive correction (0.5 to 1.0)
+  int32_t gain = 500 + (absError * 500) / 10000;  // 0.5 + error/10° * 0.5
+  if (gain > 1000) gain = 1000;
+
+  adjustment = (adjustment * gain) / 1000;
+
+  // Ensure minimum step of 1 millidegree
+  if (adjustment < 1) adjustment = 1;
+
+  // Apply direction (negate to compensate for error)
+  return (errorMilliDeg > 0) ? -adjustment : adjustment;
+}
+
+// Check if calibration has converged for current point
+// Returns: 0 = not converged, 1 = converged within margin, 2 = stable oscillation
+uint8_t checkCalibrationConvergence(int32_t currentError, int32_t marginMilliDeg) {
+  // Add to error history (circular buffer)
+  calState.lastErrors[calState.errorHistoryIdx] = currentError;
+  calState.errorHistoryIdx = (calState.errorHistoryIdx + 1) % 5;
+
+  // Need at least 5 iterations for convergence check
+  if (calState.iteration < 5) return 0;
+
+  // Check if within margin
+  if (abs(currentError) <= marginMilliDeg) {
+    calState.convergedCount++;
+    if (calState.convergedCount >= CAL_CONVERGE_COUNT) {
+      return 1;  // Converged!
+    }
+  } else {
+    calState.convergedCount = 0;
+  }
+
+  // Check for stable oscillation (error bouncing around target)
+  int32_t sumErrors = 0;
+  int32_t minError = calState.lastErrors[0];
+  int32_t maxError = calState.lastErrors[0];
+
+  for (int i = 0; i < 5; i++) {
+    sumErrors += calState.lastErrors[i];
+    if (calState.lastErrors[i] < minError) minError = calState.lastErrors[i];
+    if (calState.lastErrors[i] > maxError) maxError = calState.lastErrors[i];
+  }
+
+  // If oscillation range is small, consider converged (use average)
+  int32_t oscillation = maxError - minError;
+  if (oscillation < marginMilliDeg * 2 && calState.convergedCount >= 3) {
+    return 2;  // Stable oscillation, use average
+  }
+
+  return 0;  // Not converged
+}
+
+// Check if a calibration point is marked as calibrated
+bool isPointCalibrated(uint8_t rpmIdx, uint8_t timingDeg) {
+  if (rpmIdx >= CAL_RPM_POINTS || timingDeg >= CAL_TIMING_POINTS) return false;
+  uint8_t byteIdx = timingDeg / 8;
+  uint8_t bitIdx = timingDeg % 8;
+  return (calData.calibrated[rpmIdx][byteIdx] & (1 << bitIdx)) != 0;
+}
+
+// Mark a calibration point as calibrated
+void markPointCalibrated(uint8_t rpmIdx, uint8_t timingDeg) {
+  if (rpmIdx >= CAL_RPM_POINTS || timingDeg >= CAL_TIMING_POINTS) return;
+  uint8_t byteIdx = timingDeg / 8;
+  uint8_t bitIdx = timingDeg % 8;
+  calData.calibrated[rpmIdx][byteIdx] |= (1 << bitIdx);
+}
+
+// Check if a calibration point is marked as misfire-prone
+bool isPointMisfireProne(uint8_t rpmIdx, uint8_t timingDeg) {
+  if (rpmIdx >= CAL_RPM_POINTS || timingDeg >= CAL_TIMING_POINTS) return false;
+  uint8_t byteIdx = timingDeg / 8;
+  uint8_t bitIdx = timingDeg % 8;
+  return (calData.misfireProne[rpmIdx][byteIdx] & (1 << bitIdx)) != 0;
+}
+
+// Mark a calibration point as misfire-prone
+void markPointMisfireProne(uint8_t rpmIdx, uint8_t timingDeg) {
+  if (rpmIdx >= CAL_RPM_POINTS || timingDeg >= CAL_TIMING_POINTS) return;
+  uint8_t byteIdx = timingDeg / 8;
+  uint8_t bitIdx = timingDeg % 8;
+  calData.misfireProne[rpmIdx][byteIdx] |= (1 << bitIdx);
+}
+
+// Count total calibrated points from bitmap
+uint32_t countCalibratedPoints(void) {
+  uint32_t count = 0;
+  for (uint8_t r = 0; r < CAL_RPM_POINTS; r++) {
+    for (uint8_t b = 0; b < (CAL_TIMING_POINTS + 7) / 8; b++) {
+      uint8_t byte = calData.calibrated[r][b];
+      // Count set bits using Brian Kernighan's algorithm
+      while (byte) {
+        byte &= (byte - 1);
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+// Count total misfire-prone points from bitmap
+uint32_t countMisfirePronePoints(void) {
+  uint32_t count = 0;
+  for (uint8_t r = 0; r < CAL_RPM_POINTS; r++) {
+    for (uint8_t b = 0; b < (CAL_TIMING_POINTS + 7) / 8; b++) {
+      uint8_t byte = calData.misfireProne[r][b];
+      // Count set bits using Brian Kernighan's algorithm
+      while (byte) {
+        byte &= (byte - 1);
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+// Find nearest calibrated point using spiral search
+int16_t findNearestCalibratedOffset(uint8_t rpmIdx, uint8_t timingDeg) {
+  // Search in expanding squares around the target point
+  for (int radius = 1; radius < 20; radius++) {
+    for (int dr = -radius; dr <= radius; dr++) {
+      for (int dt = -radius; dt <= radius; dt++) {
+        // Only check edge of square (interior already checked)
+        if (abs(dr) != radius && abs(dt) != radius) continue;
+
+        int r = (int)rpmIdx + dr;
+        int t = (int)timingDeg + dt;
+
+        // Bounds check
+        if (r < 0 || r >= CAL_RPM_POINTS) continue;
+        if (t < 0 || t >= CAL_TIMING_POINTS) continue;
+
+        if (isPointCalibrated((uint8_t)r, (uint8_t)t)) {
+          return calData.offsets[r][t];
+        }
+      }
+    }
+  }
+
+  return 0;  // No calibrated point found
+}
+
+// Bilinear interpolation for calibration offset
+// Input: rpm (actual), timingScaled (0.01° units)
+// Output: offset in 0.01° units (centidegrees)
+int16_t getCalibrationOffsetInterpolated(uint16_t rpm, int16_t timingScaled) {
+  // Convert to float-like fixed point for interpolation
+  // RPM index: rpm / 250
+  // Timing index: timingScaled / 100
+
+  int32_t rpmIdx1000 = ((int32_t)rpm * 1000) / 250;  // Index × 1000
+  int32_t timingIdx1000 = ((int32_t)timingScaled * 1000) / 100;  // Index × 1000
+
+  uint8_t rpmLo = rpmIdx1000 / 1000;
+  uint8_t rpmHi = rpmLo + 1;
+  uint8_t timingLo = timingIdx1000 / 1000;
+  uint8_t timingHi = timingLo + 1;
+
+  // Clamp indices
+  if (rpmHi >= CAL_RPM_POINTS) { rpmHi = CAL_RPM_POINTS - 1; rpmLo = rpmHi > 0 ? rpmHi - 1 : 0; }
+  if (timingHi >= CAL_TIMING_POINTS) { timingHi = CAL_TIMING_POINTS - 1; timingLo = timingHi > 0 ? timingHi - 1 : 0; }
+  if (timingLo < 0) timingLo = 0;
+
+  // Get 4 corner offsets (with fallback for uncalibrated points)
+  int16_t o00, o01, o10, o11;
+
+  if (isPointCalibrated(rpmLo, timingLo)) {
+    o00 = calData.offsets[rpmLo][timingLo];
+  } else {
+    o00 = findNearestCalibratedOffset(rpmLo, timingLo);
+  }
+
+  if (isPointCalibrated(rpmLo, timingHi)) {
+    o01 = calData.offsets[rpmLo][timingHi];
+  } else {
+    o01 = findNearestCalibratedOffset(rpmLo, timingHi);
+  }
+
+  if (isPointCalibrated(rpmHi, timingLo)) {
+    o10 = calData.offsets[rpmHi][timingLo];
+  } else {
+    o10 = findNearestCalibratedOffset(rpmHi, timingLo);
+  }
+
+  if (isPointCalibrated(rpmHi, timingHi)) {
+    o11 = calData.offsets[rpmHi][timingHi];
+  } else {
+    o11 = findNearestCalibratedOffset(rpmHi, timingHi);
+  }
+
+  // Calculate interpolation fractions (0-1000 scale)
+  int32_t rpmFrac = rpmIdx1000 - (int32_t)rpmLo * 1000;
+  int32_t timingFrac = timingIdx1000 - (int32_t)timingLo * 1000;
+
+  // Clamp fractions
+  if (rpmFrac < 0) rpmFrac = 0;
+  if (rpmFrac > 1000) rpmFrac = 1000;
+  if (timingFrac < 0) timingFrac = 0;
+  if (timingFrac > 1000) timingFrac = 1000;
+
+  // Bilinear interpolation
+  int32_t top = ((int32_t)o00 * (1000 - timingFrac) + (int32_t)o01 * timingFrac) / 1000;
+  int32_t bot = ((int32_t)o10 * (1000 - timingFrac) + (int32_t)o11 * timingFrac) / 1000;
+  int32_t result = (top * (1000 - rpmFrac) + bot * rpmFrac) / 1000;
+
+  return (int16_t)result;
+}
+
+// ============================================================================
+// CALIBRATION TIMER CALLBACKS
+// ============================================================================
+
+// TIM16 callback - toggles PB8 to generate VR-like signal
+// IMPORTANT: NO BLOCKING! Just toggle and record time, capture done in main loop
+void calRpmCallback(void) {
+  static bool state = false;
+  state = !state;
+
+  if (state) {
+    // Rising edge - send trigger pulse
+    GPIOB->BSRR = (1U << 8);  // PB8 HIGH
+    calState.triggerTime = TIM_CAPTURE->CNT;  // Record trigger time
+    calState.triggersSent++;  // Track for misfire detection
+    calState.debugTriggerCount++;  // DEBUG: total trigger count
+    calState.waitingForCapture = 1;  // Signal main loop to poll for capture
+  } else {
+    GPIOB->BSRR = (1U << (8 + 16));  // PB8 LOW
+  }
+}
+
+// Poll for ignition capture on PB3 - called from main loop (NOT ISR!)
+// This is non-blocking and checks for rising edge on PB3
+void pollCalibrationCapture(void) {
+  // Only poll if calibration is running and waiting for capture
+  if (calState.mode != CAL_MODE_RUNNING || !calState.waitingForCapture) {
+    return;
+  }
+
+  // Check timeout (5ms = 50000 ticks at 10MHz)
+  uint32_t now = TIM_CAPTURE->CNT;
+  uint32_t trigTime = calState.triggerTime;
+  uint32_t elapsed;
+  if (now >= trigTime) {
+    elapsed = now - trigTime;
+  } else {
+    elapsed = (0xFFFFFFFF - trigTime) + now + 1;
+  }
+
+  if (elapsed > 50000) {
+    // Timeout - no capture detected
+    calState.waitingForCapture = 0;
+    return;
+  }
+
+  // Check for rising edge on PB3
+  uint8_t pb3Now = (GPIOB->IDR & (1U << 3)) ? 1 : 0;
+  if (pb3Now && !calState.lastPb3State) {
+    // Rising edge detected - capture!
+    calState.captureTime = now;
+    calState.debugCaptureCount++;
+    calState.debugRawExtiCount++;
+
+    // Calculate delay from trigger to ignition
+    uint32_t delay;
+    if (now >= trigTime) {
+      delay = now - trigTime;
+    } else {
+      delay = (0xFFFFFFFF - trigTime) + now + 1;
+    }
+
+    calState.capturedDelay = delay;
+    calState.captureReady = 1;
+    calState.triggersSent = 0;
+    calState.waitingForCapture = 0;
+  }
+  calState.lastPb3State = pb3Now;
+}
+
+// ============================================================================
+// CALIBRATION TIMER SETUP
+// ============================================================================
+
+void setupCalibrationTimers(void) {
+  USB_SERIAL.println(F("Setting up calibration timers..."));
+  USB_SERIAL.flush();
+
+  // === VDDIO2 Check for PB8 ===
+  // On STM32H562, PB8 is on VDDIO2 power domain (PB1 is on VDD, no issue)
+  #ifdef PWR_VMSR_VDDIO2RDY
+  USB_SERIAL.print(F("  VDDIO2 status: "));
+  if (PWR->VMSR & PWR_VMSR_VDDIO2RDY) {
+    USB_SERIAL.println(F("READY"));
+  } else {
+    USB_SERIAL.println(F("NOT READY - PB8 may not work!"));
+    delay(10);
+  }
+  #else
+  USB_SERIAL.println(F("  VDDIO2: N/A (using VDD)"));
+  #endif
+
+  // === TIM16: RPM Generator Output on PB8 ===
+  // TIM16 is a 16-bit timer, we'll use it to generate a square wave
+  // Period controls RPM: period = 60,000,000 / RPM (at 10MHz tick, period in ticks)
+
+  // Enable GPIOB clock first (needed for PB8/PB1)
+  RCC->AHB2ENR |= RCC_AHB2ENR_GPIOBEN;
+  __DSB();
+
+  // Enable TIM16 clock
+  RCC->APB2ENR |= RCC_APB2ENR_TIM16EN;
+  __DSB();
+
+  USB_SERIAL.println(F("  TIM16 clock enabled"));
+  USB_SERIAL.flush();
+
+  TimerCalRpm = new HardwareTimer(TIM16);
+
+  USB_SERIAL.println(F("  TIM16 HardwareTimer created"));
+  USB_SERIAL.flush();
+
+  // Calculate prescaler for 10MHz tick (same as other timers)
+  uint32_t timerClk = HAL_RCC_GetPCLK2Freq();  // TIM16 is on APB2
+  uint32_t apb2Prescaler = (RCC->CFGR2 & RCC_CFGR2_PPRE2) >> RCC_CFGR2_PPRE2_Pos;
+  if (apb2Prescaler >= 4) {
+    timerClk *= 2;
+  }
+  uint32_t prescaler = timerClk / TIMER_TICK_HZ;
+
+  TimerCalRpm->setPrescaleFactor(prescaler);
+  TimerCalRpm->setOverflow(30000);  // Default: 2000 RPM (60M/2000/2 = 15000 half-period)
+
+  USB_SERIAL.println(F("  TIM16 configured"));
+  USB_SERIAL.flush();
+
+  // Configure PB8 as TIM16_CH1 output (alternate function)
+  // We'll toggle in software for more flexibility
+  TimerCalRpm->attachInterrupt(calRpmCallback);
+
+  // Configure PB8 as output
+  GPIOB->MODER &= ~(3U << (8 * 2));
+  GPIOB->MODER |= (1U << (8 * 2));   // Output mode
+  GPIOB->OSPEEDR |= (3U << (8 * 2)); // High speed
+  GPIOB->BSRR = (1U << (8 + 16));    // Start LOW
+
+  // Don't start yet - will be started when calibration begins
+  TimerCalRpm->pause();
+
+  USB_SERIAL.println(F("  TIM16 OK (PB8 output)"));
+  USB_SERIAL.flush();
+
+  // === PB3: Ignition Capture (dedicated calibration pin) ===
+  // Configure as input with pull-down - polling mode (no EXTI)
+  GPIOB->MODER &= ~(3U << (3 * 2));  // Clear mode bits = INPUT
+  GPIOB->PUPDR &= ~(3U << (3 * 2));  // Clear pull-up/down
+  GPIOB->PUPDR |= (2U << (3 * 2));   // Pull-down
+
+  USB_SERIAL.println(F("  PB3 configured as INPUT (cal capture)"));
+  USB_SERIAL.flush();
+
+  USB_SERIAL.println(F("Calibration timers configured"));
+}
+
+// Start/Stop calibration timers
+void startCalibrationTimers(uint16_t targetRpm) {
+  // Calculate period for target RPM
+  // Period = 60,000,000 / RPM / 2 (half-period for toggle)
+  // At 10MHz tick: period_ticks = 300,000,000 / RPM
+  if (targetRpm < 100) targetRpm = 100;  // Minimum 100 RPM
+  if (targetRpm > 20000) targetRpm = 20000;  // Maximum 20000 RPM
+
+  uint32_t halfPeriodTicks = 300000000UL / targetRpm;
+  if (halfPeriodTicks > 65535) halfPeriodTicks = 65535;  // 16-bit timer limit
+
+  calState.rpmPeriodTicks = halfPeriodTicks;
+  calState.targetRpm = targetRpm;
+
+  // Ensure PB3 is INPUT for ignition capture (dedicated calibration pin)
+  // PB3 doesn't conflict with any CDI functionality
+  GPIOB->MODER &= ~(3U << (3 * 2));  // Clear mode bits (set to INPUT)
+  GPIOB->PUPDR &= ~(3U << (3 * 2));  // Clear pull-up/down
+  GPIOB->PUPDR |= (2U << (3 * 2));   // Pull-down
+
+  USB_SERIAL.print(F("CAL:PB3 as INPUT, MODER=0x"));
+  USB_SERIAL.println(GPIOB->MODER, HEX);
+
+  TimerCalRpm->setOverflow(halfPeriodTicks);
+  TimerCalRpm->setCount(0);
+  TimerCalRpm->resume();
+
+  // Using polling in calRpmCallback (EXTI unreliable on STM32H5)
+  USB_SERIAL.println(F("CAL:Using polling mode for capture"));
+
+  calState.mode = CAL_MODE_RUNNING;
+}
+
+void stopCalibrationTimers(void) {
+  TimerCalRpm->pause();
+
+  // Set PB8 LOW
+  GPIOB->BSRR = (1U << (8 + 16));
+
+  // PB3 stays as INPUT - dedicated calibration pin, no conflict with CDI
+  USB_SERIAL.println(F("CAL:Timers stopped"));
+
+  // Disable timing override so ISR uses normal map timing
+  calState.overrideTimingEnabled = 0;
+
+  calState.mode = CAL_MODE_OFF;
+}
+
+void updateCalibrationRpm(uint16_t targetRpm) {
+  if (targetRpm < 100) targetRpm = 100;
+  if (targetRpm > 20000) targetRpm = 20000;
+
+  uint32_t halfPeriodTicks = 300000000UL / targetRpm;
+  if (halfPeriodTicks > 65535) halfPeriodTicks = 65535;
+
+  calState.rpmPeriodTicks = halfPeriodTicks;
+  calState.targetRpm = targetRpm;
+
+  TimerCalRpm->setOverflow(halfPeriodTicks);
+}
+
+// ============================================================================
 // PIN SETUP
 // ============================================================================
 
@@ -2245,6 +3173,12 @@ void loadHardcodedDefaults(void) {
   config.quickShifter.maxRpm = 15000;     // Max 15000 RPM
   // Default QS cut time map: 50ms for all RPM points
   memset(config.quickShifter.cutTimeMap, 50, QS_TABLE_SIZE);
+
+  // Calibration defaults (disabled until user runs calibration)
+  // Note: Actual calibration data stored in separate calData structure (~10.5KB)
+  config.calibration.enabled = 0;
+  config.calibration.marginError = CAL_DEFAULT_MARGIN;  // 0.05° default margin (in 0.01° units)
+  config.calibration.complete = 0;
 
   config.peakRpm = 0;
 
@@ -2491,6 +3425,279 @@ void saveConfigToSD(void) {
     USB_SERIAL.print(F("Config saved to "));
     USB_SERIAL.println(saveFile);
   }
+}
+
+// ============================================================================
+// CALIBRATION DATA FILE STORAGE
+// ============================================================================
+
+uint32_t calculateCalChecksum(CalibrationData* cd) {
+  uint32_t sum = 0;
+  uint8_t* p = (uint8_t*)cd;
+  size_t len = sizeof(CalibrationData) - sizeof(uint32_t);  // Exclude checksum itself
+  for (size_t i = 0; i < len; i++) {
+    sum += p[i];
+  }
+  return sum ^ 0xCA12CA12;
+}
+
+bool validateCalData(CalibrationData* cd) {
+  if (cd->magic != CAL_MAGIC) return false;
+  if (cd->version != CAL_VERSION) return false;
+  if (cd->checksum != calculateCalChecksum(cd)) return false;
+  return true;
+}
+
+// Save calibration data to SD card
+void saveCalibrationToSD(void) {
+  if (!runtime.sdCardOk) {
+    USB_SERIAL.println(F("CAL:SAVE,ERROR,SD not OK"));
+    return;
+  }
+
+  if (runtime.sdBusy) {
+    USB_SERIAL.println(F("CAL:SAVE,ERROR,SD busy"));
+    return;
+  }
+
+  runtime.sdBusy = 1;
+
+  // Update header
+  calData.magic = CAL_MAGIC;
+  calData.version = CAL_VERSION;
+  calData.enabled = config.calibration.enabled;
+  calData.marginError = config.calibration.marginError;
+  calData.complete = config.calibration.complete;
+  calData.checksum = calculateCalChecksum(&calData);
+
+  // Create folder if needed
+  SD.mkdir(CONFIG_FOLDER);
+
+  // Remove old file
+  SD.remove(CAL_FILE_BIN);
+
+  // Save
+  File f = SD.open(CAL_FILE_BIN, FILE_WRITE);
+  if (!f) {
+    USB_SERIAL.println(F("CAL:SAVE,ERROR,cannot open file"));
+    runtime.sdBusy = 0;
+    return;
+  }
+
+  size_t written = f.write((uint8_t*)&calData, sizeof(CalibrationData));
+  f.close();
+
+  runtime.sdBusy = 0;
+
+  if (written != sizeof(CalibrationData)) {
+    USB_SERIAL.print(F("CAL:SAVE,ERROR,wrote "));
+    USB_SERIAL.print(written);
+    USB_SERIAL.print(F("/"));
+    USB_SERIAL.println(sizeof(CalibrationData));
+  } else {
+    USB_SERIAL.print(F("CAL:SAVE,OK,"));
+    USB_SERIAL.print(sizeof(CalibrationData));
+    USB_SERIAL.println(F(" bytes"));
+    calDataLoaded = 1;
+  }
+}
+
+// Load calibration data from SD card
+bool loadCalibrationFromSD(void) {
+  if (!runtime.sdCardOk) {
+    USB_SERIAL.println(F("CAL:LOAD,ERROR,SD not OK"));
+    return false;
+  }
+
+  if (runtime.sdBusy) {
+    USB_SERIAL.println(F("CAL:LOAD,ERROR,SD busy"));
+    return false;
+  }
+
+  runtime.sdBusy = 1;
+
+  File f = SD.open(CAL_FILE_BIN, FILE_READ);
+  if (!f) {
+    USB_SERIAL.println(F("CAL:LOAD,NOFILE"));
+    runtime.sdBusy = 0;
+    calDataLoaded = 0;
+    return false;
+  }
+
+  size_t readBytes = f.read((uint8_t*)&calData, sizeof(CalibrationData));
+  f.close();
+
+  runtime.sdBusy = 0;
+
+  if (readBytes != sizeof(CalibrationData)) {
+    USB_SERIAL.print(F("CAL:LOAD,ERROR,read "));
+    USB_SERIAL.print(readBytes);
+    USB_SERIAL.print(F("/"));
+    USB_SERIAL.println(sizeof(CalibrationData));
+    calDataLoaded = 0;
+    return false;
+  }
+
+  if (!validateCalData(&calData)) {
+    USB_SERIAL.println(F("CAL:LOAD,ERROR,invalid data"));
+    calDataLoaded = 0;
+    return false;
+  }
+
+  // Sync with config
+  config.calibration.enabled = calData.enabled;
+  config.calibration.marginError = calData.marginError;
+  config.calibration.complete = calData.complete;
+  calDataLoaded = 1;
+  calSource = CAL_SOURCE_SD;
+
+  USB_SERIAL.print(F("CAL:LOAD,OK,"));
+  USB_SERIAL.print(sizeof(CalibrationData));
+  USB_SERIAL.print(F(" bytes,complete="));
+  USB_SERIAL.println(calData.complete);
+
+  return true;
+}
+
+// Export calibration to text file
+void exportCalibrationToText(void) {
+  if (!runtime.sdCardOk) {
+    USB_SERIAL.println(F("CAL:EXPORT,ERROR,SD not OK"));
+    return;
+  }
+
+  runtime.sdBusy = 1;
+
+  SD.remove(CAL_FILE_TXT);
+  File f = SD.open(CAL_FILE_TXT, FILE_WRITE);
+  if (!f) {
+    USB_SERIAL.println(F("CAL:EXPORT,ERROR,cannot open file"));
+    runtime.sdBusy = 0;
+    return;
+  }
+
+  // Header
+  f.println(F("# CDI Calibration Data v2"));
+  f.println(F("# 2D Map with Fuzzy Logic"));
+  f.print(F("# Margin: "));
+  f.print((float)config.calibration.marginError / 100.0, 2);
+  f.println(F(" deg"));
+  f.println(F("#"));
+  f.println(F("# Format: RPM,TimingDeg,Offset(x0.01deg),Calibrated"));
+  f.println(F("# RPM: 0-20000 step 250 (81 points)"));
+  f.println(F("# Timing: 0-60 deg BTDC (61 points)"));
+  f.println(F("#"));
+
+  uint32_t pointCount = 0;
+
+  for (uint8_t r = 0; r < CAL_RPM_POINTS; r++) {
+    for (uint8_t t = 0; t < CAL_TIMING_POINTS; t++) {
+      f.print(r * 250);
+      f.print(F(","));
+      f.print(t);
+      f.print(F(","));
+      f.print(calData.offsets[r][t]);
+      f.print(F(","));
+      f.println(isPointCalibrated(r, t) ? 1 : 0);
+      pointCount++;
+    }
+  }
+
+  f.println(F("# EOF"));
+  f.close();
+
+  runtime.sdBusy = 0;
+
+  USB_SERIAL.print(F("CAL:EXPORT,OK,"));
+  USB_SERIAL.print(pointCount);
+  USB_SERIAL.println(F(" points"));
+}
+
+// Import calibration from text file
+bool importCalibrationFromText(void) {
+  if (!runtime.sdCardOk) {
+    USB_SERIAL.println(F("CAL:IMPORT,ERROR,SD not OK"));
+    return false;
+  }
+
+  runtime.sdBusy = 1;
+
+  File f = SD.open(CAL_FILE_TXT, FILE_READ);
+  if (!f) {
+    USB_SERIAL.println(F("CAL:IMPORT,NOFILE"));
+    runtime.sdBusy = 0;
+    return false;
+  }
+
+  // Clear existing data
+  memset(&calData, 0, sizeof(CalibrationData));
+  calData.magic = CAL_MAGIC;
+  calData.version = CAL_VERSION;
+
+  uint32_t pointCount = 0;
+  uint32_t calibratedCount = 0;
+  char line[64];
+
+  while (f.available()) {
+    int len = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[len] = '\0';
+
+    // Skip comments and empty lines
+    if (line[0] == '#' || line[0] == '\0' || line[0] == '\r') continue;
+
+    // Parse: RPM,TimingDeg,Offset,Calibrated
+    int rpm, timing, offset, cal;
+    if (sscanf(line, "%d,%d,%d,%d", &rpm, &timing, &offset, &cal) == 4) {
+      uint8_t rpmIdx = rpm / 250;
+      uint8_t timingDeg = timing;
+
+      if (rpmIdx < CAL_RPM_POINTS && timingDeg < CAL_TIMING_POINTS) {
+        calData.offsets[rpmIdx][timingDeg] = (int16_t)offset;
+        if (cal) {
+          markPointCalibrated(rpmIdx, timingDeg);
+          calibratedCount++;
+        }
+        pointCount++;
+      }
+    }
+  }
+
+  f.close();
+
+  // Update status
+  calData.enabled = (calibratedCount > 0) ? 1 : 0;
+  calData.complete = (calibratedCount == CAL_TOTAL_POINTS) ? 1 : 0;
+  calData.marginError = config.calibration.marginError;
+  calData.checksum = calculateCalChecksum(&calData);
+
+  // Sync with config
+  config.calibration.enabled = calData.enabled;
+  config.calibration.complete = calData.complete;
+  calDataLoaded = 1;
+
+  runtime.sdBusy = 0;
+
+  USB_SERIAL.print(F("CAL:IMPORT,OK,"));
+  USB_SERIAL.print(pointCount);
+  USB_SERIAL.print(F(" points,"));
+  USB_SERIAL.print(calibratedCount);
+  USB_SERIAL.println(F(" calibrated"));
+
+  return true;
+}
+
+// Clear calibration data
+void clearCalibrationData(void) {
+  memset(&calData, 0, sizeof(CalibrationData));
+  calData.magic = CAL_MAGIC;
+  calData.version = CAL_VERSION;
+  calData.marginError = CAL_DEFAULT_MARGIN;
+
+  config.calibration.enabled = 0;
+  config.calibration.complete = 0;
+  calDataLoaded = 0;
+
+  USB_SERIAL.println(F("CAL:CLEAR,OK"));
 }
 
 // ============================================================================
@@ -3466,6 +4673,9 @@ static uint32_t uploadBytes = 0;
 void processUSB(void) {
   if (!USB_SERIAL.available()) return;
 
+  // Kick watchdog before potentially blocking read
+  kickWatchdog();
+
   String cmd = USB_SERIAL.readStringUntil('\n');
   cmd.trim();
   if (cmd.length() == 0) return;
@@ -3839,6 +5049,443 @@ void processUSB(void) {
         }
       }
     }
+
+  // ============================================================================
+  // CALIBRATION COMMANDS (2D Map: RPM × Timing)
+  // ============================================================================
+  } else if (cmd == "CAL START" || cmd == "CAL:START") {
+    // Start self-calibration mode
+    if (runtime.currentRpm >= 100) {
+      USB_SERIAL.println(F("CAL:BUSY"));  // Engine running
+    } else if (calState.mode == CAL_MODE_RUNNING) {
+      USB_SERIAL.println(F("CAL:ALREADY"));
+    } else {
+      // Initialize calibration state
+      memset(&calState, 0, sizeof(CalibrationState));
+      calState.currentTimingDeg = 0;      // Start at 0° BTDC
+      calState.currentRpmIdx = 2;         // Start at index 2 = 500 RPM (0,250,500)
+      calState.targetRpm = CAL_RPM_START;
+      calState.mode = CAL_MODE_RUNNING;
+      calState.lastStateChangeMs = millis();
+      calState.totalPoints = CAL_TOTAL_POINTS;
+
+      // CRITICAL: Set override timing BEFORE starting timers!
+      // Without this, first calibration point uses map timing instead of target
+      calState.overrideTimingEnabled = 1;
+      calState.overrideTimingScaled = calState.currentTimingDeg * 100;  // 0° initially
+
+      // Reset debug counters
+      calState.debugTriggerCount = 0;
+      calState.debugCaptureCount = 0;
+      calState.debugRawExtiCount = 0;
+
+      // Clear calibration data
+      clearCalibrationData();
+
+      // Start calibration timers
+      startCalibrationTimers(calState.targetRpm);
+
+      USB_SERIAL.println(F("CAL:STARTED"));
+      USB_SERIAL.print(F("CAL:TOTAL,"));
+      USB_SERIAL.println(CAL_TOTAL_POINTS);
+      USB_SERIAL.print(F("CAL:MARGIN,"));
+      USB_SERIAL.print(config.calibration.marginError);
+      USB_SERIAL.println(F(" (0.01deg)"));
+
+      // DEBUG: Using polling on PB3 for ignition capture
+      USB_SERIAL.print(F("CAL:PB3=")); USB_SERIAL.println(((GPIOB->IDR >> 3) & 1));
+    }
+
+  } else if (cmd == "CAL STOP" || cmd == "CAL:STOP") {
+    // Stop calibration
+    if (calState.mode != CAL_MODE_OFF) {
+      stopCalibrationTimers();
+      USB_SERIAL.println(F("CAL:STOPPED"));
+      USB_SERIAL.print(F("CAL:PROGRESS,"));
+      USB_SERIAL.print(calState.completedPoints);
+      USB_SERIAL.print(F("/"));
+      USB_SERIAL.println(CAL_TOTAL_POINTS);
+      USB_SERIAL.print(F("CAL:PASSED,"));
+      USB_SERIAL.println(calState.passedPoints);
+      USB_SERIAL.print(F("CAL:FAILED,"));
+      USB_SERIAL.println(calState.failedPoints);
+    } else {
+      USB_SERIAL.println(F("CAL:NOTRUNNING"));
+    }
+
+  } else if (cmd == "CAL PAUSE" || cmd == "CAL:PAUSE") {
+    if (calState.mode == CAL_MODE_RUNNING) {
+      calState.mode = CAL_MODE_PAUSED;
+      TimerCalRpm->pause();
+      USB_SERIAL.println(F("CAL:PAUSED"));
+    } else {
+      USB_SERIAL.println(F("CAL:NOTRUNNING"));
+    }
+
+  } else if (cmd == "CAL RESUME" || cmd == "CAL:RESUME") {
+    if (calState.mode == CAL_MODE_PAUSED) {
+      calState.mode = CAL_MODE_RUNNING;
+      calState.lastStateChangeMs = millis();
+      TimerCalRpm->resume();
+      USB_SERIAL.println(F("CAL:RESUMED"));
+    } else {
+      USB_SERIAL.println(F("CAL:NOTPAUSED"));
+    }
+
+  } else if (cmd == "CAL TEST" || cmd == "CAL:TEST") {
+    // Test jumper connections
+    USB_SERIAL.println(F("CAL:TEST_START"));
+
+    // Stop calibration if running
+    if (calState.mode != CAL_MODE_OFF) {
+      stopCalibrationTimers();
+    }
+
+    // === TEST 1: PB8 → PA0 (Trigger path) ===
+    USB_SERIAL.println(F("CAL:TEST1_PB8_PA0"));
+
+    // Configure PB8 as output (should already be)
+    GPIOB->MODER &= ~(3U << (8 * 2));
+    GPIOB->MODER |= (1U << (8 * 2));
+    GPIOB->BSRR = (1U << (8 + 16));  // Start LOW
+    delay(5);
+
+    // Read PA0 initial state
+    bool pa0Before = (GPIOA->IDR & (1U << 0)) ? true : false;
+
+    // Toggle PB8 HIGH
+    GPIOB->BSRR = (1U << 8);
+    delayMicroseconds(100);
+    bool pa0AfterHigh = (GPIOA->IDR & (1U << 0)) ? true : false;
+
+    // Toggle PB8 LOW
+    GPIOB->BSRR = (1U << (8 + 16));
+    delayMicroseconds(100);
+    bool pa0AfterLow = (GPIOA->IDR & (1U << 0)) ? true : false;
+
+    USB_SERIAL.print(F("  PB8=LOW  -> PA0="));
+    USB_SERIAL.println(pa0Before ? "HIGH" : "LOW");
+    USB_SERIAL.print(F("  PB8=HIGH -> PA0="));
+    USB_SERIAL.println(pa0AfterHigh ? "HIGH" : "LOW");
+    USB_SERIAL.print(F("  PB8=LOW  -> PA0="));
+    USB_SERIAL.println(pa0AfterLow ? "HIGH" : "LOW");
+
+    bool test1Pass = (!pa0Before && pa0AfterHigh && !pa0AfterLow);
+    USB_SERIAL.print(F("CAL:TEST1_RESULT,"));
+    USB_SERIAL.println(test1Pass ? "PASS" : "FAIL");
+
+    // === TEST 2: PB0 → PB3 (Ignition capture path) ===
+    USB_SERIAL.println(F("CAL:TEST2_PB0_PB3"));
+
+    // Configure PB3 as input with pull-down
+    GPIOB->MODER &= ~(3U << (3 * 2));
+    GPIOB->PUPDR &= ~(3U << (3 * 2));
+    GPIOB->PUPDR |= (2U << (3 * 2));
+    delay(1);
+
+    // PB0 is CDI output, set LOW first
+    CDI_LOW();
+    delay(1);
+
+    // Read PB3 initial state
+    bool pb3Before = (GPIOB->IDR & (1U << 3)) ? true : false;
+
+    // Set PB0 HIGH
+    CDI_HIGH();
+    delayMicroseconds(100);
+    bool pb3AfterHigh = (GPIOB->IDR & (1U << 3)) ? true : false;
+
+    // Set PB0 LOW
+    CDI_LOW();
+    delayMicroseconds(100);
+    bool pb3AfterLow = (GPIOB->IDR & (1U << 3)) ? true : false;
+
+    USB_SERIAL.print(F("  PB0=LOW  -> PB3="));
+    USB_SERIAL.println(pb3Before ? "HIGH" : "LOW");
+    USB_SERIAL.print(F("  PB0=HIGH -> PB3="));
+    USB_SERIAL.println(pb3AfterHigh ? "HIGH" : "LOW");
+    USB_SERIAL.print(F("  PB0=LOW  -> PB3="));
+    USB_SERIAL.println(pb3AfterLow ? "HIGH" : "LOW");
+
+    bool test2Pass = (!pb3Before && pb3AfterHigh && !pb3AfterLow);
+    USB_SERIAL.print(F("CAL:TEST2_RESULT,"));
+    USB_SERIAL.println(test2Pass ? "PASS" : "FAIL");
+
+    // === SUMMARY ===
+    USB_SERIAL.print(F("CAL:TEST_SUMMARY,"));
+    if (test1Pass && test2Pass) {
+      USB_SERIAL.println(F("ALL_PASS"));
+    } else if (!test1Pass && !test2Pass) {
+      USB_SERIAL.println(F("BOTH_FAIL"));
+    } else if (!test1Pass) {
+      USB_SERIAL.println(F("PB8_PA0_FAIL"));
+    } else {
+      USB_SERIAL.println(F("PB0_PB3_FAIL"));
+    }
+    USB_SERIAL.println(F("CAL:TEST_END"));
+
+  } else if (cmd == "CAL STATUS" || cmd == "CAL:STATUS") {
+    // Report 2D calibration status
+    USB_SERIAL.print(F("CAL:MODE,"));
+    USB_SERIAL.println(calState.mode);
+    USB_SERIAL.print(F("CAL:POS,RPM="));
+    USB_SERIAL.print(calState.currentRpmIdx * 250);
+    USB_SERIAL.print(F(",TIMING="));
+    USB_SERIAL.println(calState.currentTimingDeg);
+    USB_SERIAL.print(F("CAL:RPMIDX,"));
+    USB_SERIAL.print(calState.currentRpmIdx);
+    USB_SERIAL.print(F("/"));
+    USB_SERIAL.println(CAL_RPM_POINTS);
+    USB_SERIAL.print(F("CAL:TIMINGDEG,"));
+    USB_SERIAL.print(calState.currentTimingDeg);
+    USB_SERIAL.print(F("/"));
+    USB_SERIAL.println(CAL_TIMING_POINTS);
+    USB_SERIAL.print(F("CAL:PROGRESS,"));
+    USB_SERIAL.print(calState.completedPoints);
+    USB_SERIAL.print(F("/"));
+    USB_SERIAL.println(CAL_TOTAL_POINTS);
+    USB_SERIAL.print(F("CAL:PASSED,"));
+    USB_SERIAL.println(calState.passedPoints);
+    USB_SERIAL.print(F("CAL:FAILED,"));
+    USB_SERIAL.println(calState.failedPoints);
+    USB_SERIAL.print(F("CAL:MISFIRES,"));
+    USB_SERIAL.println(calState.totalMisfires);
+    USB_SERIAL.print(F("CAL:MISFIRE_POINTS,"));
+    USB_SERIAL.println(calState.misfirePoints);
+    USB_SERIAL.print(F("CAL:MISFIRE_CURRENT,"));
+    USB_SERIAL.println(calState.misfireCount);
+    // DEBUG: Show trigger and capture counts to diagnose misfire issues
+    USB_SERIAL.print(F("CAL:DEBUG_TRIGGERS,"));
+    USB_SERIAL.println(calState.debugTriggerCount);
+    USB_SERIAL.print(F("CAL:DEBUG_IGNITIONS,"));
+    USB_SERIAL.println(runtime.ignitionCount);
+    USB_SERIAL.print(F("CAL:DEBUG_CAPTURES,"));
+    USB_SERIAL.println(calState.debugCaptureCount);
+    // Pin state debug (using polling on PB3)
+    USB_SERIAL.print(F("CAL:PB3_STATE,"));
+    USB_SERIAL.println(((GPIOB->IDR >> 3) & 1));
+    USB_SERIAL.print(F("CAL:PB0_STATE,"));
+    USB_SERIAL.println((GPIOB->IDR >> 0) & 1);
+    USB_SERIAL.print(F("CAL:ITERATION,"));
+    USB_SERIAL.println(calState.iteration);
+    USB_SERIAL.print(F("CAL:OFFSET,"));
+    // Current accumulated offset in millidegrees
+    USB_SERIAL.print(calState.accumulatedOffset / 10);  // Show as centidegrees
+    USB_SERIAL.println(F(" (0.01deg)"));
+    USB_SERIAL.print(F("CAL:ENABLED,"));
+    USB_SERIAL.println(config.calibration.enabled);
+    USB_SERIAL.print(F("CAL:COMPLETE,"));
+    USB_SERIAL.println(calData.complete);
+    USB_SERIAL.print(F("CAL:CALIBRATED_BITMAP,"));
+    USB_SERIAL.println(countCalibratedPoints());
+    USB_SERIAL.print(F("CAL:MISFIREMAP_POINTS,"));
+    USB_SERIAL.println(countMisfirePronePoints());
+    USB_SERIAL.print(F("CAL:LOADED,"));
+    USB_SERIAL.println(calDataLoaded);
+    USB_SERIAL.print(F("CAL:SOURCE,"));
+    USB_SERIAL.println(getCalSourceName());
+    USB_SERIAL.print(F("CAL:FLASH_BACKUP,"));
+    USB_SERIAL.println(hasFlashCalibration() ? F("YES") : F("NO"));
+
+  } else if (cmd.startsWith("CAL MARGIN ") || cmd.startsWith("CAL:MARGIN,")) {
+    // Set error margin (in 0.01° units, 1-100 = 0.01° to 1.00°)
+    int idx = cmd.indexOf(' ', 4);
+    if (idx < 0) idx = cmd.indexOf(',', 4);
+    if (idx > 0) {
+      uint8_t margin = cmd.substring(idx + 1).toInt();
+      if (margin >= 1 && margin <= 100) {
+        config.calibration.marginError = margin;
+        calData.marginError = margin;  // Sync to calData
+        config.checksum = calculateChecksum(&config);
+        USB_SERIAL.print(F("CAL:MARGIN,"));
+        USB_SERIAL.print(margin);
+        USB_SERIAL.println(F(" (0.01deg)"));
+      } else {
+        USB_SERIAL.println(F("CAL:MARGIN,INVALID (1-100)"));
+      }
+    }
+
+  } else if (cmd == "CAL ENABLE" || cmd == "CAL:ENABLE") {
+    config.calibration.enabled = 1;
+    calData.enabled = 1;
+    config.checksum = calculateChecksum(&config);
+    USB_SERIAL.println(F("CAL:ENABLED"));
+
+  } else if (cmd == "CAL DISABLE" || cmd == "CAL:DISABLE") {
+    config.calibration.enabled = 0;
+    calData.enabled = 0;
+    config.checksum = calculateChecksum(&config);
+    USB_SERIAL.println(F("CAL:DISABLED"));
+
+  } else if (cmd == "CAL SAVE" || cmd == "CAL:SAVE") {
+    // Save calibration to SD card (binary)
+    USB_SERIAL.println(F("CAL:SAVING..."));
+    saveCalibrationToSD();
+    USB_SERIAL.println(F("CAL:SAVED"));
+
+  } else if (cmd == "CAL LOAD" || cmd == "CAL:LOAD") {
+    // Load calibration from SD card (binary)
+    USB_SERIAL.println(F("CAL:LOADING..."));
+    if (loadCalibrationFromSD()) {
+      USB_SERIAL.println(F("CAL:LOADED,OK"));
+      USB_SERIAL.print(F("CAL:COMPLETE,"));
+      USB_SERIAL.println(calData.complete);
+    } else {
+      USB_SERIAL.println(F("CAL:LOADED,FAIL"));
+    }
+
+  } else if (cmd == "CAL EXPORT" || cmd == "CAL:EXPORT") {
+    // Export calibration to text file
+    USB_SERIAL.println(F("CAL:EXPORTING..."));
+    exportCalibrationToText();
+    USB_SERIAL.println(F("CAL:EXPORTED,calibration.txt"));
+
+  } else if (cmd == "CAL IMPORT" || cmd == "CAL:IMPORT") {
+    // Import calibration from text file
+    USB_SERIAL.println(F("CAL:IMPORTING..."));
+    if (importCalibrationFromText()) {
+      USB_SERIAL.println(F("CAL:IMPORTED,OK"));
+    } else {
+      USB_SERIAL.println(F("CAL:IMPORTED,FAIL"));
+    }
+
+  } else if (cmd == "CAL FLASHSAVE" || cmd == "CAL:FLASHSAVE") {
+    // Save calibration to Flash backup
+    USB_SERIAL.println(F("CAL:FLASH,SAVING..."));
+    if (saveCalibrationToFlash()) {
+      USB_SERIAL.print(F("CAL:FLASH,SAVED,"));
+      USB_SERIAL.print(countCalibratedPoints());
+      USB_SERIAL.println(F(" points"));
+    }
+
+  } else if (cmd == "CAL FLASHLOAD" || cmd == "CAL:FLASHLOAD") {
+    // Load calibration from Flash backup
+    USB_SERIAL.println(F("CAL:FLASH,LOADING..."));
+    if (loadCalibrationFromFlash()) {
+      USB_SERIAL.print(F("CAL:FLASH,LOADED,"));
+      USB_SERIAL.print(countCalibratedPoints());
+      USB_SERIAL.print(F(" points,complete="));
+      USB_SERIAL.println(calData.complete);
+    } else {
+      USB_SERIAL.println(F("CAL:FLASH,NODATA"));
+    }
+
+  } else if (cmd == "CAL FLASHCLEAR" || cmd == "CAL:FLASHCLEAR") {
+    // Clear calibration from Flash
+    USB_SERIAL.println(F("CAL:FLASH,CLEARING..."));
+    if (clearCalibrationFromFlash()) {
+      USB_SERIAL.println(F("CAL:FLASH,CLEARED"));
+    }
+
+  } else if (cmd == "CAL FLASHINFO" || cmd == "CAL:FLASHINFO") {
+    // Show Flash calibration info
+    USB_SERIAL.print(F("CAL:FLASH,HAS_DATA,"));
+    USB_SERIAL.println(hasFlashCalibration() ? F("YES") : F("NO"));
+    USB_SERIAL.print(F("CAL:SOURCE,"));
+    USB_SERIAL.println(getCalSourceName());
+
+  } else if (cmd == "CAL SOURCE" || cmd == "CAL:SOURCE") {
+    // Show calibration source
+    USB_SERIAL.print(F("CAL:SOURCE,"));
+    USB_SERIAL.println(getCalSourceName());
+
+  } else if (cmd == "CAL OFFSETS" || cmd == "CAL:OFFSETS") {
+    // Print 2D calibration offsets (compact format)
+    // Format: RPM,T0,T1,T2,...,T60
+    USB_SERIAL.println(F("CAL:OFFSETS,2D"));
+    USB_SERIAL.println(F("# RPM,BTDC0,BTDC1,...,BTDC60 (values in 0.01deg)"));
+    for (uint8_t rpmIdx = 0; rpmIdx < CAL_RPM_POINTS; rpmIdx++) {
+      USB_SERIAL.print(rpmIdx * 250);  // RPM value
+      for (uint8_t timingDeg = 0; timingDeg < CAL_TIMING_POINTS; timingDeg++) {
+        USB_SERIAL.print(F(","));
+        USB_SERIAL.print(calData.offsets[rpmIdx][timingDeg]);
+      }
+      USB_SERIAL.println();
+    }
+    USB_SERIAL.println(F("CAL:END"));
+
+  } else if (cmd.startsWith("CAL OFFSET ") || cmd.startsWith("CAL:OFFSET,")) {
+    // Get single offset: CAL OFFSET <rpmIdx>,<timingDeg>
+    int idx = cmd.indexOf(' ', 4);
+    if (idx < 0) idx = cmd.indexOf(',', 4);
+    if (idx > 0) {
+      String params = cmd.substring(idx + 1);
+      int comma = params.indexOf(',');
+      if (comma > 0) {
+        uint8_t rpmIdx = params.substring(0, comma).toInt();
+        uint8_t timingDeg = params.substring(comma + 1).toInt();
+        if (rpmIdx < CAL_RPM_POINTS && timingDeg < CAL_TIMING_POINTS) {
+          int16_t offset = calData.offsets[rpmIdx][timingDeg];
+          uint8_t calibrated = (calData.calibrated[rpmIdx][timingDeg / 8] >> (timingDeg % 8)) & 1;
+          USB_SERIAL.print(F("CAL:OFFSET,"));
+          USB_SERIAL.print(rpmIdx * 250);
+          USB_SERIAL.print(F("RPM,"));
+          USB_SERIAL.print(timingDeg);
+          USB_SERIAL.print(F("deg,"));
+          USB_SERIAL.print(offset);
+          USB_SERIAL.print(F(","));
+          USB_SERIAL.println(calibrated ? F("CAL") : F("UNCAL"));
+        } else {
+          USB_SERIAL.println(F("CAL:OFFSET,INVALID"));
+        }
+      }
+    }
+
+  } else if (cmd == "CAL CLEAR" || cmd == "CAL:CLEAR") {
+    // Clear calibration data
+    clearCalibrationData();
+    config.calibration.complete = 0;
+    config.checksum = calculateChecksum(&config);
+    USB_SERIAL.println(F("CAL:CLEARED"));
+
+  } else if (cmd == "CAL INFO" || cmd == "CAL:INFO") {
+    // Show calibration info and statistics
+    USB_SERIAL.println(F("=== CALIBRATION INFO ==="));
+    USB_SERIAL.print(F("Grid: "));
+    USB_SERIAL.print(CAL_RPM_POINTS);
+    USB_SERIAL.print(F(" RPM x "));
+    USB_SERIAL.print(CAL_TIMING_POINTS);
+    USB_SERIAL.print(F(" Timing = "));
+    USB_SERIAL.print(CAL_TOTAL_POINTS);
+    USB_SERIAL.println(F(" points"));
+    USB_SERIAL.print(F("RPM Range: 0-"));
+    USB_SERIAL.print((CAL_RPM_POINTS - 1) * 250);
+    USB_SERIAL.println(F(" (step 250)"));
+    USB_SERIAL.print(F("Timing Range: 0-"));
+    USB_SERIAL.print(CAL_TIMING_POINTS - 1);
+    USB_SERIAL.println(F(" BTDC (step 1deg)"));
+    USB_SERIAL.print(F("Storage Precision: 0.01 deg/unit"));
+    USB_SERIAL.print(F(" (int16: ±327.67deg)"));
+    USB_SERIAL.println();
+    USB_SERIAL.print(F("Internal Precision: 0.001 deg"));
+    USB_SERIAL.println(F(" (fuzzy logic)"));
+    USB_SERIAL.print(F("Enabled: "));
+    USB_SERIAL.println(config.calibration.enabled ? F("YES") : F("NO"));
+    USB_SERIAL.print(F("Margin: "));
+    USB_SERIAL.print(config.calibration.marginError);
+    USB_SERIAL.println(F(" (0.01deg)"));
+    USB_SERIAL.print(F("Complete: "));
+    USB_SERIAL.println(calData.complete ? F("YES") : F("NO"));
+    USB_SERIAL.print(F("Magic: 0x"));
+    USB_SERIAL.println(calData.magic, HEX);
+
+    // Count calibrated points
+    uint32_t calibratedCount = 0;
+    for (uint8_t r = 0; r < CAL_RPM_POINTS; r++) {
+      for (uint8_t t = 0; t < CAL_TIMING_POINTS; t++) {
+        if ((calData.calibrated[r][t / 8] >> (t % 8)) & 1) {
+          calibratedCount++;
+        }
+      }
+    }
+    USB_SERIAL.print(F("Calibrated: "));
+    USB_SERIAL.print(calibratedCount);
+    USB_SERIAL.print(F("/"));
+    USB_SERIAL.print(CAL_TOTAL_POINTS);
+    USB_SERIAL.print(F(" ("));
+    USB_SERIAL.print((calibratedCount * 100) / CAL_TOTAL_POINTS);
+    USB_SERIAL.println(F("%)"));
+    USB_SERIAL.println(F("========================"));
 
   } else {
     USB_SERIAL.print(F("Unknown: "));
@@ -4233,7 +5880,7 @@ void handleMap(String p) {
 
 // Static buffer for RT data - avoids multiple print() calls that can block
 // 23 fields max, each ~10 chars + commas + header = ~280 chars max
-static char rtBuffer[320];
+static char rtBuffer[384];  // Increased for calibration debug fields
 
 // Binary telemetry packet structure (packed for efficient transmission)
 // Size: 18 bytes vs ~120+ bytes for ASCII - 6x reduction in USB traffic
@@ -4329,8 +5976,9 @@ void sendRealtimeData(void) {
   if (runtime.timingClamped) flags2 |= 0x01;
 
   // Build entire string in buffer (single write = less blocking)
+  // Calibration fields: calMode, calRpmIdx, calTimingDeg, calMisfires, calIteration, debugTriggers, debugIgnitions, debugCaptures, rawExti
   int len = snprintf(rtBuffer, sizeof(rtBuffer),
-    "RT:%u,%d,%d,%d,%d,%u,%u,%u,%u,%u,%u,%d,%u,%u,%u,%u,%u,%u,%u,%d,%d,%u,%lu\n",
+    "RT:%u,%d,%d,%d,%d,%u,%u,%u,%u,%u,%u,%d,%u,%u,%u,%u,%u,%u,%u,%d,%d,%u,%lu,%u,%u,%u,%lu,%u,%lu,%lu,%lu,%lu\n",
     runtime.currentRpm,
     runtime.currentTimingScaled / DEG_SCALE,
     rawToTempX10(runtime.tempRaw) / 10,
@@ -4353,7 +6001,17 @@ void sendRealtimeData(void) {
     runtime.dRpm,                // RPM change per cycle
     runtime.phaseCorrectionUs,   // Phase correction in ticks
     flags2,                      // Extended flags (timingClamped, etc)
-    runtime.skippedTriggers      // Race condition skip counter
+    runtime.skippedTriggers,     // Race condition skip counter
+    // Calibration fields (24-32)
+    calState.mode,               // 24: 0=off, 1=running, 2=paused, 3=complete
+    calState.currentRpmIdx,      // 25: 0-80
+    calState.currentTimingDeg,   // 26: 0-60
+    calState.totalMisfires,      // 27: Total misfires
+    calState.iteration,          // 28: Current iteration
+    calState.debugTriggerCount,  // 29: Total triggers sent
+    runtime.ignitionCount,       // 30: Total ignitions fired
+    calState.debugCaptureCount,  // 31: Total captures detected (when calibrating)
+    calState.debugRawExtiCount   // 32: Total raw EXTI fires (always counted)
   );
 
   // Single write - much faster than 14+ print() calls
@@ -4702,6 +6360,56 @@ void setup() {
                      (runtime.configSource == 1 ? F("FLASH") : F("HARDCODED")));
   USB_SERIAL.flush();
 
+  // ========================================
+  // LOAD 2D CALIBRATION DATA (Priority: SD → Flash → Hardcoded)
+  // ========================================
+  USB_SERIAL.println(F("Loading calibration..."));
+
+  // Start with hardcoded defaults (all zeros)
+  initHardcodedCalibration();
+
+  bool calLoaded = false;
+
+  // Priority 1: Try SD Card first (if available and enabled)
+  if (runtime.sdCardOk && config.calibration.enabled) {
+    if (loadCalibrationFromSD()) {
+      calSource = CAL_SOURCE_SD;
+      calLoaded = true;
+      USB_SERIAL.print(F("  Source: SD Card - "));
+      USB_SERIAL.print(calData.complete ? F("COMPLETE") : F("PARTIAL"));
+      USB_SERIAL.print(F(" ("));
+      USB_SERIAL.print(countCalibratedPoints());
+      USB_SERIAL.print(F("/"));
+      USB_SERIAL.print(CAL_TOTAL_POINTS);
+      USB_SERIAL.println(F(" points)"));
+    }
+  }
+
+  // Priority 2: Try Flash backup if SD failed
+  if (!calLoaded && flashAccessible) {
+    if (loadCalibrationFromFlash()) {
+      calLoaded = true;
+      USB_SERIAL.print(F("  Source: Flash Backup - "));
+      USB_SERIAL.print(calData.complete ? F("COMPLETE") : F("PARTIAL"));
+      USB_SERIAL.print(F(" ("));
+      USB_SERIAL.print(countCalibratedPoints());
+      USB_SERIAL.print(F("/"));
+      USB_SERIAL.print(CAL_TOTAL_POINTS);
+      USB_SERIAL.println(F(" points)"));
+    }
+  }
+
+  // Priority 3: Use hardcoded defaults (already initialized)
+  if (!calLoaded) {
+    USB_SERIAL.println(F("  Source: Hardcoded Defaults (all zeros)"));
+    USB_SERIAL.println(F("  Calibration will use map values only"));
+    config.calibration.complete = 0;
+    calData.complete = 0;
+  }
+
+  USB_SERIAL.print(F("  Calibration Source: "));
+  USB_SERIAL.println(getCalSourceName());
+
   // Initialize lookup tables
   initLookupTables();
   initPeriodLookup();  // Period-to-index table for fast ISR (no division)
@@ -4711,6 +6419,10 @@ void setup() {
 
   // Setup timers with direct register access
   setupTimers();
+
+  // Setup calibration timers (TIM16 for RPM gen, EXTI for capture)
+  setupCalibrationTimers();
+  memset(&calState, 0, sizeof(CalibrationState));
 
   // CRITICAL: Set interrupt priorities for deterministic ignition timing
   // Priority 0 = highest, larger number = lower priority
@@ -4751,21 +6463,317 @@ void setup() {
 }
 
 // ============================================================================
+// CALIBRATION STATE MACHINE - 2D with Fuzzy Logic
+// ============================================================================
+
+// Store calibration offset for current point
+void storeCalibrationOffset(void) {
+  // Convert from millidegrees (0.001°) to centidegrees (0.01°) storage
+  // accumulatedOffset is in 0.001°, storage is in 0.01°
+  // Divide by 10 with rounding
+  int32_t storedValue = (calState.accumulatedOffset + 5) / 10;
+
+  // Clamp to int16_t range (±327.67°, way more than needed)
+  if (storedValue > 32767) storedValue = 32767;
+  if (storedValue < -32767) storedValue = -32767;
+
+  // Store in 2D map
+  uint8_t rpmIdx = calState.currentRpmIdx;
+  uint8_t timingDeg = calState.currentTimingDeg;
+
+  calData.offsets[rpmIdx][timingDeg] = (int16_t)storedValue;
+  markPointCalibrated(rpmIdx, timingDeg);
+
+  calState.completedPoints++;
+}
+
+// Move to next calibration point
+void moveToNextCalPoint(void) {
+  // Reset fuzzy state
+  calState.accumulatedOffset = 0;
+  calState.iteration = 0;
+  calState.convergedCount = 0;
+  calState.sampleSum = 0;
+  calState.sampleCount = 0;
+  calState.errorHistoryIdx = 0;
+  calState.misfireCount = 0;        // Reset misfire counter for new point
+  calState.triggersSent = 0;        // Reset trigger counter
+  memset((void*)calState.lastErrors, 0, sizeof(calState.lastErrors));
+
+  // Move to next RPM
+  calState.currentRpmIdx++;
+
+  // Check if done with this timing degree
+  if (calState.currentRpmIdx >= CAL_RPM_POINTS ||
+      (calState.currentRpmIdx * 250) > CAL_RPM_END) {
+    // Move to next timing degree
+    calState.currentTimingDeg++;
+    calState.currentRpmIdx = CAL_RPM_START / 250;  // Reset to start RPM
+
+    // Check if all done
+    if (calState.currentTimingDeg >= CAL_TIMING_POINTS) {
+      // Calibration complete!
+      calData.complete = 1;
+      calData.enabled = 1;
+      config.calibration.complete = 1;
+      config.calibration.enabled = 1;
+      calDataLoaded = 1;
+
+      stopCalibrationTimers();
+      calState.mode = CAL_MODE_COMPLETE;
+
+      USB_SERIAL.println(F("CAL:COMPLETE"));
+      USB_SERIAL.print(F("CAL:TOTAL,"));
+      USB_SERIAL.println(calState.completedPoints);
+      USB_SERIAL.print(F("CAL:PASSED,"));
+      USB_SERIAL.println(calState.passedPoints);
+      USB_SERIAL.print(F("CAL:FAILED,"));
+      USB_SERIAL.println(calState.failedPoints);
+      USB_SERIAL.print(F("CAL:MISFIRES,"));
+      USB_SERIAL.println(calState.totalMisfires);
+      USB_SERIAL.print(F("CAL:MISFIRE_POINTS,"));
+      USB_SERIAL.println(calState.misfirePoints);
+      USB_SERIAL.println(F("CAL:Use 'CAL SAVE' to store to SD"));
+      return;
+    }
+
+    // Print progress for new timing degree
+    USB_SERIAL.print(F("CAL:TIMING,"));
+    USB_SERIAL.print(calState.currentTimingDeg);
+    USB_SERIAL.println(F("°"));
+  }
+
+  // Set target RPM for new point
+  uint16_t targetRpm = calState.currentRpmIdx * 250;
+  if (targetRpm < CAL_RPM_START) targetRpm = CAL_RPM_START;
+  updateCalibrationRpm(targetRpm);
+
+  // Set override timing for calibration
+  calState.overrideTimingEnabled = 1;
+  calState.overrideTimingScaled = calState.currentTimingDeg * 100;  // Convert to 0.01° units
+
+  calState.pointStartMs = millis();
+  calState.settleStartMs = millis();
+  calState.rpmStable = 0;
+}
+
+void processCalibration(void) {
+  // Only process if calibration is running
+  if (calState.mode != CAL_MODE_RUNNING) return;
+
+  // Ignition capture is handled by polling in calRpmCallback
+  // Polling on PB3 sets captureReady flag when rising edge detected
+
+  uint32_t now = millis();
+
+  // Wait for RPM to stabilize after change
+  if (!calState.rpmStable) {
+    if (now - calState.settleStartMs >= CAL_SETTLE_MS) {
+      calState.rpmStable = 1;
+      calState.triggersSent = 0;  // Reset trigger counter when stable
+    }
+    return;
+  }
+
+  // =========================================================================
+  // MISFIRE DETECTION
+  // If we've sent N triggers without getting a capture, it's a misfire
+  // =========================================================================
+  if (calState.triggersSent >= CAL_MISFIRE_TIMEOUT_TRIGGERS) {
+    calState.misfireCount++;
+    calState.totalMisfires++;
+    calState.triggersSent = 0;  // Reset counter
+
+    // Report misfire
+    USB_SERIAL.print(F("CAL:MISFIRE,"));
+    USB_SERIAL.print(calState.currentRpmIdx * 250);
+    USB_SERIAL.print(F("RPM,"));
+    USB_SERIAL.print(calState.currentTimingDeg);
+    USB_SERIAL.print(F("°,#"));
+    USB_SERIAL.println(calState.misfireCount);
+
+    // Check if too many misfires at this point
+    if (calState.misfireCount >= CAL_MISFIRE_MAX_PER_POINT) {
+      // Mark point as failed due to excessive misfires
+      storeCalibrationOffset();  // Store current offset anyway
+      calState.misfirePoints++;
+      calState.failedPoints++;
+
+      // Mark this point as misfire-prone for runtime safety retard
+      markPointMisfireProne(calState.currentRpmIdx, calState.currentTimingDeg);
+
+      USB_SERIAL.print(F("CAL:MISFIRE_FAIL,"));
+      USB_SERIAL.print(calState.currentRpmIdx * 250);
+      USB_SERIAL.print(F(","));
+      USB_SERIAL.print(calState.currentTimingDeg);
+      USB_SERIAL.print(F(",misfires="));
+      USB_SERIAL.println(calState.misfireCount);
+
+      // Move to next point
+      moveToNextCalPoint();
+      return;
+    }
+
+    // Small delay before retry
+    calState.settleStartMs = now;
+    calState.rpmStable = 0;
+    return;
+  }
+
+  // Process captured ignition timing
+  if (calState.captureReady) {
+    calState.captureReady = 0;
+
+    // Calculate actual timing from captured delay
+    // delay (in ticks) -> degrees
+    // At 10MHz: 1 tick = 0.1µs
+    // degrees = (delay_ticks / period_ticks) * 360
+
+    uint32_t periodTicks = calState.rpmPeriodTicks * 2;  // Full period
+
+    if (periodTicks > 0) {
+      // Convert measured delay to millidegrees (0.001°)
+      // measuredDelay = (delay * 360000) / period
+      int32_t measuredDelayMilliDeg = ((int64_t)calState.capturedDelay * 360000LL) / periodTicks;
+
+      // =========================================================================
+      // CRITICAL FIX: Convert expected timing to expected delay
+      // This accounts for trigger angle and predictive/normal mode
+      // =========================================================================
+      // Trigger angle in millidegrees
+      int32_t triggerAngleMilliDeg = (config.trigger.triggerAngleScaled * 10);  // triggerAngleScaled is in 0.01° units
+
+      // Target timing in millidegrees
+      int32_t targetTimingMilliDeg = calState.currentTimingDeg * 1000;
+
+      // Calculate expected delay based on mode
+      // Normal mode: delay = triggerAngle - timing (timing <= triggerAngle)
+      // Predictive mode: delay = 360 + (triggerAngle - timing) (timing > triggerAngle)
+      int32_t expectedDelayMilliDeg = triggerAngleMilliDeg - targetTimingMilliDeg;
+
+      // Handle predictive mode (when timing > triggerAngle, delay becomes negative)
+      if (expectedDelayMilliDeg < 0) {
+        expectedDelayMilliDeg += 360000;  // Wrap around: fire next cycle
+      }
+
+      // Handle wrap-around for measured delay (in case of timer overflow detection)
+      // If measured delay is close to 360°, it might be predictive mode
+      // If expected is predictive (> 180°) but measured is small, add 360°
+      if (expectedDelayMilliDeg > 180000 && measuredDelayMilliDeg < 90000) {
+        // Likely missed the predictive cycle, measurement wrapped
+        measuredDelayMilliDeg += 360000;
+      }
+
+      // Calculate error (measured delay - expected delay) accounting for accumulated offset
+      // Positive error = ignition fired too late = need to advance = reduce delay
+      // Negative error = ignition fired too early = need to retard = increase delay
+      int32_t error = measuredDelayMilliDeg - expectedDelayMilliDeg - calState.accumulatedOffset;
+
+      // Accumulate for averaging
+      calState.sampleSum += error;
+      calState.sampleCount++;
+      calState.totalSamples++;
+    }
+  }
+
+  // State machine update (every 30ms for faster convergence)
+  if (now - calState.lastStateChangeMs < 30) return;
+  calState.lastStateChangeMs = now;
+
+  // Check if we have enough samples
+  if (calState.sampleCount >= CAL_SAMPLES_PER_CHECK) {
+    // Calculate average error in millidegrees
+    int32_t avgError = calState.sampleSum / calState.sampleCount;
+    calState.lastAvgError = avgError;
+
+    // Reset sample accumulator
+    calState.sampleSum = 0;
+    calState.sampleCount = 0;
+
+    // Convert margin from config (0.01° units) to millidegrees
+    int32_t marginMilliDeg = config.calibration.marginError * 10;
+
+    // Check convergence using fuzzy logic
+    uint8_t convergeStatus = checkCalibrationConvergence(avgError, marginMilliDeg);
+
+    if (convergeStatus > 0) {
+      // Converged! Store offset
+      storeCalibrationOffset();
+      calState.passedPoints++;
+
+      // Print progress (compact format)
+      USB_SERIAL.print(F("CAL:OK,"));
+      USB_SERIAL.print(calState.currentRpmIdx * 250);
+      USB_SERIAL.print(F(","));
+      USB_SERIAL.print(calState.currentTimingDeg);
+      USB_SERIAL.print(F(","));
+      USB_SERIAL.print((float)calState.accumulatedOffset / 1000.0, 3);
+      USB_SERIAL.println(F("°"));
+
+      // Move to next point
+      moveToNextCalPoint();
+      return;
+    }
+
+    // Not converged - apply fuzzy adjustment
+    int32_t adjustment = fuzzyCalibrationAdjust(avgError);
+    calState.accumulatedOffset += adjustment;
+
+    calState.iteration++;
+
+    // Check max iterations
+    if (calState.iteration >= CAL_MAX_ITERATIONS) {
+      // Store best effort
+      storeCalibrationOffset();
+      calState.failedPoints++;
+
+      USB_SERIAL.print(F("CAL:MAXITER,"));
+      USB_SERIAL.print(calState.currentRpmIdx * 250);
+      USB_SERIAL.print(F(","));
+      USB_SERIAL.print(calState.currentTimingDeg);
+      USB_SERIAL.print(F(","));
+      USB_SERIAL.print((float)avgError / 1000.0, 3);
+      USB_SERIAL.println(F("°"));
+
+      // Move to next point
+      moveToNextCalPoint();
+      return;
+    }
+
+    // Print retry info periodically
+    if (calState.iteration % 10 == 0) {
+      USB_SERIAL.print(F("CAL:ITER,"));
+      USB_SERIAL.print(calState.iteration);
+      USB_SERIAL.print(F(","));
+      USB_SERIAL.print((float)avgError / 1000.0, 3);
+      USB_SERIAL.print(F(",ADJ,"));
+      USB_SERIAL.println((float)adjustment / 1000.0, 3);
+    }
+  }
+
+  // Update RPM generator periodically (for stability)
+  if (now - calState.settleStartMs >= CAL_RPM_HOLD_MS) {
+    // RPM has been stable long enough, continue measurement
+  }
+}
+
+// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
 void loop() {
+  // Kick watchdog immediately at start of every loop iteration
+  // This ensures watchdog is fed even if loop takes long time
+  kickWatchdog();
+
+  // Poll for calibration capture (non-blocking, called frequently)
+  // This must be early in loop for best timing accuracy
+  pollCalibrationCapture();
+
   // Mark start of loop iteration for CPU measurement
   cpuLoopStart();
 
   uint32_t now = millis();
-
-  // Kick watchdog (rate limited - timeout is ~0.8s, kick every 500ms)
-  static uint32_t lastWatchdogKick = 0;
-  if (now - lastWatchdogKick >= 500) {
-    lastWatchdogKick = now;
-    kickWatchdog();
-  }
 
   static uint32_t lastADC = 0;
   static uint32_t lastOutput = 0;
@@ -4832,6 +6840,9 @@ void loop() {
 
   // Process USB commands
   processUSB();
+
+  // Process calibration state machine (if running)
+  processCalibration();
 
   // Safety: Reset sdBusy if stuck for more than 5 seconds
   if (runtime.sdBusy) {
